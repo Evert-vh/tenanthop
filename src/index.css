@@ -388,6 +388,45 @@ button { cursor: pointer; border: none; outline: none; }
   white-space: nowrap;
 }
 
+/* ── Import picker ── */
+.import-list {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.import-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .1s;
+}
+.import-row:hover { background: var(--bg3); }
+.import-row.select-all {
+  padding: 4px 12px;
+  color: var(--dim);
+  font-size: 12px;
+}
+.import-row input[type="checkbox"] { flex-shrink: 0; cursor: pointer; }
+.import-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.import-status {
+  font-size: 10px; font-weight: 700;
+  padding: 2px 7px; border-radius: 10px;
+  flex-shrink: 0; letter-spacing: .3px;
+}
+.import-status.new    { background: #14532d40; color: #4ade80; border: 1px solid #14532d; }
+.import-status.update { background: #78350f40; color: #fbbf24; border: 1px solid #78350f; }
+.import-summary {
+  margin-right: auto;
+  font-size: 11px;
+  color: var(--dim);
+  align-self: center;
+}
+
 .btn-primary {
   background: var(--accent);
   color: #fff;

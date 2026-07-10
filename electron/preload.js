@@ -8,4 +8,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openPortal: (opts) => ipcRenderer.invoke('open-portal', opts),
   exportClients: () => ipcRenderer.invoke('export-clients'),
   importClients: () => ipcRenderer.invoke('import-clients'),
+  mergeClients: (incoming) => ipcRenderer.invoke('merge-clients', incoming),
 });

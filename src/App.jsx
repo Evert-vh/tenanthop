@@ -2,12 +2,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 import ClientList from './components/ClientList';
 import PortalPanel from './components/PortalPanel';
 import ClientModal from './components/ClientModal';
+import ImportModal from './components/ImportModal';
 
 export default function App() {
   const [clients, setClients] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [search, setSearch] = useState('');
   const [editingClient, setEditingClient] = useState(null); // null=closed, {}=add, {id,...}=edit
+  const [importList, setImportList] = useState(null); // null=closed, [...]=picker open
   const [loading, setLoading] = useState(true);
 
   const loadClients = useCallback(async () => {
@@ -36,11 +38,14 @@ export default function App() {
   };
 
   const handleImport = async () => {
-    const imported = await window.electronAPI.importClients();
-    if (imported) {
-      setClients(imported);
-      setSelectedId(null);
-    }
+    const incoming = await window.electronAPI.importClients();
+    if (incoming) setImportList(incoming);
+  };
+
+  const handleImportConfirm = async (selected) => {
+    const merged = await window.electronAPI.mergeClients(selected);
+    setClients(merged);
+    setImportList(null);
   };
 
   const handleDelete = async (id) => {
@@ -95,6 +100,15 @@ export default function App() {
           client={editingClient?.id ? editingClient : null}
           onSave={handleSave}
           onClose={() => setEditingClient(null)}
+        />
+      )}
+
+      {importList !== null && (
+        <ImportModal
+          incoming={importList}
+          existing={clients}
+          onConfirm={handleImportConfirm}
+          onClose={() => setImportList(null)}
         />
       )}
     </div>

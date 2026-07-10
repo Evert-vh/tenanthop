@@ -134,31 +134,35 @@ ipcMain.handle('import-clients', async () => {
       color: c.color || COLORS[0],
       tenantDomain: c.tenantDomain || '',
     })).filter(c => c.name);
-
-    const existing = store.get('clients', []);
-    if (existing.length > 0) {
-      const { response } = await dialog.showMessageBox(mainWindow, {
-        type: 'question',
-        buttons: ['Replace', 'Cancel'],
-        defaultId: 1,
-        cancelId: 1,
-        title: 'Import clients',
-        message: `Import ${sanitized.length} client${sanitized.length === 1 ? '' : 's'}?`,
-        detail: `This replaces your current list of ${existing.length} client${existing.length === 1 ? '' : 's'}.`,
-      });
-      if (response !== 0) return null;
-    }
-
-    store.set('clients', sanitized);
-    return sanitized;
+    return sanitized.length ? sanitized : null;
   } catch {
     return null;
   }
 });
 
+// Merge selected imported clients into the existing list. Matches by id or
+// name (case-insensitive); matches keep their existing id so the client's
+// saved sign-in session (persist:client-{id}) stays attached.
+ipcMain.handle('merge-clients', (_, incoming) => {
+  const clients = store.get('clients', []);
+  for (const inc of incoming) {
+    const idx = clients.findIndex(c =>
+      c.id === inc.id || c.name.toLowerCase() === inc.name.toLowerCase()
+    );
+    if (idx >= 0) {
+      clients[idx] = { ...clients[idx], name: inc.name, color: inc.color, tenantDomain: inc.tenantDomain || '' };
+    } else {
+      clients.push({ id: inc.id || randomUUID(), name: inc.name, color: inc.color, tenantDomain: inc.tenantDomain || '' });
+    }
+  }
+  store.set('clients', clients);
+  return clients;
+});
+
 // ---- Portal windows (tabbed browser per client) ----
 
 const clientWindows = new Map();
+const TAB_BAR_H = 78; // tab row (40) + nav row (38)
 
 function getFaviconUrl(url) {
   try { return `https://www.google.com/s2/favicons?sz=32&domain=${new URL(url).hostname}`; }
@@ -171,7 +175,18 @@ function serializeState(clientId, state) {
     clientName: state.clientName,
     color: state.color,
     activeIdx: state.activeIdx,
-    tabs: state.tabs.map(t => ({ title: t.title, favicon: t.favicon })),
+    tabs: state.tabs.map(t => {
+      const wc = t.wcv.webContents;
+      const alive = !wc.isDestroyed();
+      const url = alive ? wc.getURL() : '';
+      return {
+        title: t.title,
+        favicon: t.favicon,
+        url: url.startsWith('data:') ? '' : url,
+        canGoBack: alive && wc.canGoBack(),
+        canGoForward: alive && wc.canGoForward(),
+      };
+    }),
   };
 }
 
@@ -182,9 +197,9 @@ function notifyTabBar(clientId, state) {
 
 function resizeViews(state) {
   const { width, height } = state.win.getContentBounds();
-  state.tabBarWcv.setBounds({ x: 0, y: 0, width, height: 40 });
+  state.tabBarWcv.setBounds({ x: 0, y: 0, width, height: TAB_BAR_H });
   state.tabs.forEach((tab, i) => {
-    tab.wcv.setBounds({ x: 0, y: 40, width, height: height - 40 });
+    tab.wcv.setBounds({ x: 0, y: TAB_BAR_H, width, height: height - TAB_BAR_H });
     tab.wcv.setVisible(i === state.activeIdx);
   });
 }
@@ -220,6 +235,30 @@ function closeTab(clientId, state, idx) {
 ipcMain.handle('tab-close', (_, clientId, idx) => {
   const state = clientWindows.get(clientId);
   if (state) closeTab(clientId, state, idx);
+});
+
+function activeWebContents(clientId) {
+  const state = clientWindows.get(clientId);
+  const tab = state?.tabs[state.activeIdx];
+  if (!tab || tab.wcv.webContents.isDestroyed()) return null;
+  return tab.wcv.webContents;
+}
+
+ipcMain.handle('tab-nav', (_, clientId, action) => {
+  const wc = activeWebContents(clientId);
+  if (!wc) return;
+  if (action === 'back' && wc.canGoBack()) wc.goBack();
+  else if (action === 'forward' && wc.canGoForward()) wc.goForward();
+  else if (action === 'reload') wc.reload();
+});
+
+ipcMain.handle('tab-go', (_, clientId, url) => {
+  const wc = activeWebContents(clientId);
+  if (!wc) return;
+  let target = String(url || '').trim();
+  if (!target) return;
+  if (!/^https?:\/\//i.test(target)) target = 'https://' + target;
+  wc.loadURL(target).catch(() => {});
 });
 
 // Deny invasive permission requests (mic, camera, geolocation, ...) per client session.
@@ -260,7 +299,7 @@ function addTab(clientId, state, url, initialTitle) {
     webPreferences: { partition: getClientPartition(clientId), nodeIntegration: false, contextIsolation: true },
   });
   win.contentView.addChildView(wcv);
-  wcv.setBounds({ x: 0, y: 40, width, height: height - 40 });
+  wcv.setBounds({ x: 0, y: TAB_BAR_H, width, height: height - TAB_BAR_H });
 
   const tab = { wcv, title: initialTitle, favicon: getFaviconUrl(url) };
   state.tabs.push(tab);
@@ -276,6 +315,7 @@ function addTab(clientId, state, url, initialTitle) {
     tab.favicon = getFaviconUrl(navUrl);
     notifyTabBar(clientId, state);
   });
+  wcv.webContents.on('did-navigate-in-page', () => notifyTabBar(clientId, state));
 
   // Login popups stay popups (they postMessage back to their opener);
   // everything else target="_blank" / window.open becomes a new tab
@@ -369,7 +409,7 @@ ipcMain.handle('open-portal', (_, { clientId, clientName, color, portalUrl, port
     });
     win.contentView.addChildView(tabBarWcv);
     const { width } = win.getContentBounds();
-    tabBarWcv.setBounds({ x: 0, y: 0, width, height: 40 });
+    tabBarWcv.setBounds({ x: 0, y: 0, width, height: TAB_BAR_H });
     tabBarWcv.webContents.loadFile(path.join(__dirname, 'tabbar.html'));
 
     state = { win, tabBarWcv, tabs: [], activeIdx: -1, clientName, color };
