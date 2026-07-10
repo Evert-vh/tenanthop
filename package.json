@@ -26,6 +26,12 @@
     "win": {
       "target": [
         {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
           "target": "portable",
           "arch": [
             "x64"
@@ -35,6 +41,14 @@
     },
     "portable": {
       "artifactName": "TenantHop-portable.exe"
+    },
+    "nsis": {
+      "artifactName": "TenantHop-Setup-${version}.exe",
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "TenantHop"
     }
   },
   "dependencies": {
