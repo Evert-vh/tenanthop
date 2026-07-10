@@ -133,6 +133,7 @@ ipcMain.handle('import-clients', async () => {
       name: String(c.name || '').trim(),
       color: c.color || COLORS[0],
       tenantDomain: c.tenantDomain || '',
+      portals: sanitizePortals(c.portals),
     })).filter(c => c.name);
     return sanitized.length ? sanitized : null;
   } catch {
@@ -143,16 +144,34 @@ ipcMain.handle('import-clients', async () => {
 // Merge selected imported clients into the existing list. Matches by id or
 // name (case-insensitive); matches keep their existing id so the client's
 // saved sign-in session (persist:client-{id}) stays attached.
+function sanitizePortals(portals) {
+  if (!portals || typeof portals !== 'object') return undefined;
+  return {
+    disabled: Array.isArray(portals.disabled) ? portals.disabled.filter(x => typeof x === 'string') : [],
+    custom: Array.isArray(portals.custom)
+      ? portals.custom
+          .filter(p => p && p.name && p.url)
+          .map(p => ({ id: p.id || randomUUID(), name: String(p.name), url: String(p.url) }))
+      : [],
+  };
+}
+
 ipcMain.handle('merge-clients', (_, incoming) => {
   const clients = store.get('clients', []);
   for (const inc of incoming) {
     const idx = clients.findIndex(c =>
       c.id === inc.id || c.name.toLowerCase() === inc.name.toLowerCase()
     );
+    const fields = {
+      name: inc.name,
+      color: inc.color,
+      tenantDomain: inc.tenantDomain || '',
+      ...(inc.portals ? { portals: sanitizePortals(inc.portals) } : {}),
+    };
     if (idx >= 0) {
-      clients[idx] = { ...clients[idx], name: inc.name, color: inc.color, tenantDomain: inc.tenantDomain || '' };
+      clients[idx] = { ...clients[idx], ...fields };
     } else {
-      clients.push({ id: inc.id || randomUUID(), name: inc.name, color: inc.color, tenantDomain: inc.tenantDomain || '' });
+      clients.push({ id: inc.id || randomUUID(), ...fields });
     }
   }
   store.set('clients', clients);

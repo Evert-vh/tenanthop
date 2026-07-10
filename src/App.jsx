@@ -3,6 +3,7 @@ import ClientList from './components/ClientList';
 import PortalPanel from './components/PortalPanel';
 import ClientModal from './components/ClientModal';
 import ImportModal from './components/ImportModal';
+import PortalsModal from './components/PortalsModal';
 
 export default function App() {
   const [clients, setClients] = useState([]);
@@ -10,6 +11,7 @@ export default function App() {
   const [search, setSearch] = useState('');
   const [editingClient, setEditingClient] = useState(null); // null=closed, {}=add, {id,...}=edit
   const [importList, setImportList] = useState(null); // null=closed, [...]=picker open
+  const [portalsClient, setPortalsClient] = useState(null); // client being customized
   const [loading, setLoading] = useState(true);
 
   const loadClients = useCallback(async () => {
@@ -46,6 +48,12 @@ export default function App() {
     const merged = await window.electronAPI.mergeClients(selected);
     setClients(merged);
     setImportList(null);
+  };
+
+  const handlePortalsSave = async (fields) => {
+    const updated = await window.electronAPI.updateClient(portalsClient.id, fields);
+    setClients(prev => prev.map(c => c.id === updated.id ? updated : c));
+    setPortalsClient(null);
   };
 
   const handleDelete = async (id) => {
@@ -85,6 +93,7 @@ export default function App() {
             <PortalPanel
               client={selectedClient}
               onEdit={() => setEditingClient(selectedClient)}
+              onManagePortals={() => setPortalsClient(selectedClient)}
             />
           ) : (
             <div className="empty-state">
@@ -109,6 +118,14 @@ export default function App() {
           existing={clients}
           onConfirm={handleImportConfirm}
           onClose={() => setImportList(null)}
+        />
+      )}
+
+      {portalsClient !== null && (
+        <PortalsModal
+          client={portalsClient}
+          onSave={handlePortalsSave}
+          onClose={() => setPortalsClient(null)}
         />
       )}
     </div>
