@@ -131,18 +131,35 @@ ipcMain.handle('export-clients', async () => {
 ipcMain.handle('import-clients', async () => {
   const { filePaths, canceled } = await dialog.showOpenDialog(mainWindow, {
     title: 'Import clients',
-    filters: [{ name: 'JSON', extensions: ['json'] }],
+    filters: [
+      { name: 'Supported files', extensions: ['json', 'cfg'] },
+      { name: 'TenantHop export', extensions: ['json'] },
+      { name: 'Portals config export', extensions: ['cfg'] },
+    ],
     properties: ['openFile'],
   });
   if (canceled || !filePaths.length) return null;
   try {
     const raw = fs.readFileSync(filePaths[0], 'utf8');
-    const { clients } = JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+
+    let clients;
+    if (Array.isArray(parsed['users-data'])) {
+      // PortalsReleases .cfg export: map tenant accounts to clients
+      clients = parsed['users-data'].map((u, i) => ({
+        name: u.friendlyName || u.tenant || u.name,
+        color: COLORS[i % COLORS.length],
+        tenantDomain: u.tenant ? `${u.tenant}.onmicrosoft.com` : '',
+      }));
+    } else {
+      clients = parsed.clients;
+    }
+
     if (!Array.isArray(clients)) return null;
-    const sanitized = clients.map(c => ({
+    const sanitized = clients.map((c, i) => ({
       id: c.id || randomUUID(),
       name: String(c.name || '').trim(),
-      color: c.color || COLORS[0],
+      color: c.color || COLORS[i % COLORS.length],
       tenantDomain: c.tenantDomain || '',
       portals: sanitizePortals(c.portals),
     })).filter(c => c.name);
