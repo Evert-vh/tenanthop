@@ -1,0 +1,192 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'; img-src 'self' https: data:">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 44px; overflow: hidden; }
+  body {
+    background: #0f0f1a;
+    display: flex;
+    align-items: stretch;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: #e2e8f0;
+    user-select: none;
+    -webkit-app-region: drag;
+    border-bottom: 1px solid #1e1e35;
+  }
+
+  /* ── Client pill ── */
+  #client-pill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 16px;
+    flex-shrink: 0;
+    border-right: 1px solid #1e1e35;
+    -webkit-app-region: no-drag;
+    min-width: 0;
+    max-width: 180px;
+  }
+  #client-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  #client-name {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #c8d0de;
+  }
+
+  /* ── Tabs ── */
+  #tabs-wrap {
+    flex: 1;
+    display: flex;
+    align-items: flex-end;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0 6px;
+    gap: 2px;
+    -webkit-app-region: no-drag;
+    min-width: 0;
+  }
+  #tabs-wrap::-webkit-scrollbar { height: 0; }
+
+  .tab {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 10px 0 10px;
+    height: 34px;
+    min-width: 120px;
+    max-width: 220px;
+    flex-shrink: 0;
+    background: transparent;
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: 8px 8px 0 0;
+    cursor: pointer;
+    transition: background .12s, border-color .12s;
+    position: relative;
+    margin-top: 4px;
+  }
+  .tab:hover { background: #161625; border-color: #252540; }
+  .tab.active {
+    background: #161625;
+    border-color: #2a2a40;
+    box-shadow: inset 0 2px 0 0 var(--cc, #3b82f6);
+  }
+
+  .tab-favicon {
+    width: 14px; height: 14px;
+    flex-shrink: 0;
+    border-radius: 2px;
+    object-fit: contain;
+  }
+  .tab-favicon-placeholder {
+    width: 14px; height: 14px;
+    flex-shrink: 0;
+    border-radius: 2px;
+    background: #2a2a40;
+  }
+  .tab-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: #8892a4;
+    transition: color .12s;
+  }
+  .tab.active .tab-title { color: #e2e8f0; }
+  .tab-close {
+    flex-shrink: 0;
+    width: 16px; height: 16px;
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px;
+    color: transparent;
+    transition: background .1s, color .1s;
+    line-height: 1;
+  }
+  .tab:hover .tab-close,
+  .tab.active .tab-close { color: #8892a4; }
+  .tab-close:hover { background: #3a3a52 !important; color: #f87171 !important; }
+</style>
+</head>
+<body>
+<div id="client-pill">
+  <div id="client-dot"></div>
+  <div id="client-name"></div>
+</div>
+<div id="tabs-wrap"></div>
+<script>
+  let clientId = null;
+  let state = { clientName: '', color: '#3b82f6', tabs: [], activeIdx: -1 };
+
+  function render() {
+    document.body.style.setProperty('--cc', state.color);
+    document.getElementById('client-dot').style.cssText =
+      `background:${state.color}; box-shadow: 0 0 6px ${state.color}80`;
+    document.getElementById('client-name').textContent = state.clientName;
+
+    const wrap = document.getElementById('tabs-wrap');
+    wrap.innerHTML = '';
+
+    state.tabs.forEach((tab, i) => {
+      const el = document.createElement('div');
+      el.className = 'tab' + (i === state.activeIdx ? ' active' : '');
+
+      // Favicon
+      if (tab.favicon) {
+        const img = document.createElement('img');
+        img.className = 'tab-favicon';
+        img.src = tab.favicon;
+        img.onerror = () => img.replaceWith(makePlaceholder());
+        el.appendChild(img);
+      } else {
+        el.appendChild(makePlaceholder());
+      }
+
+      const title = document.createElement('span');
+      title.className = 'tab-title';
+      title.textContent = tab.title;
+
+      const close = document.createElement('span');
+      close.className = 'tab-close';
+      close.textContent = '✕';
+
+      el.appendChild(title);
+      el.appendChild(close);
+
+      el.addEventListener('click', () => { if (clientId) window.tabAPI.switchTab(clientId, i); });
+      close.addEventListener('click', e => {
+        e.stopPropagation();
+        if (clientId) window.tabAPI.closeTab(clientId, i);
+      });
+
+      wrap.appendChild(el);
+    });
+
+    const activeEl = wrap.children[state.activeIdx];
+    if (activeEl) activeEl.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+  }
+
+  function makePlaceholder() {
+    const d = document.createElement('div');
+    d.className = 'tab-favicon-placeholder';
+    return d;
+  }
+
+  window.tabAPI.onUpdate(s => { clientId = s.clientId; state = s; render(); });
+  window.tabAPI.getState().then(s => { if (s) { clientId = s.clientId; state = s; render(); } });
+</script>
+</body>
+</html>

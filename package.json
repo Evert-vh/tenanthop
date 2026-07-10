@@ -1,0 +1,53 @@
+{
+  "name": "m365-launcher",
+  "version": "1.0.0",
+  "description": "Microsoft 365 multi-client portal launcher",
+  "author": "Evert van Heerden",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
+    "build": "vite build",
+    "start": "cross-env NODE_ENV=production electron .",
+    "package": "vite build && electron-builder --win"
+  },
+  "build": {
+    "appId": "com.dbest.m365launcher",
+    "productName": "M365 Launcher",
+    "directories": {
+      "output": "release"
+    },
+    "asar": false,
+    "files": [
+      "dist/**",
+      "electron/**",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "M365-Launcher-portable.exe"
+    }
+  },
+  "dependencies": {
+    "electron-store": "8.1.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron": "^34.3.0",
+    "electron-builder": "^25.1.8",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite": "^5.4.0",
+    "wait-on": "^7.2.0"
+  }
+}
