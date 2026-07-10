@@ -139,6 +139,8 @@
     font-family: inherit;
   }
   #address:focus { border-color: var(--cc, #3b82f6); color: #e2e8f0; }
+  .nav-btn.saved { color: #fbbf24; }
+  .nav-btn.saved:hover:not(:disabled) { color: #fbbf24; }
 </style>
 </head>
 <body>
@@ -151,6 +153,7 @@
   <button class="nav-btn" id="btn-forward" title="Forward">›</button>
   <button class="nav-btn" id="btn-reload" title="Reload">⟳</button>
   <input id="address" spellcheck="false" placeholder="Enter address…">
+  <button class="nav-btn" id="btn-save" title="Save to portals">☆</button>
 </div>
 <script>
   let clientId = null;
@@ -211,6 +214,11 @@
     document.getElementById('btn-back').disabled = !active?.canGoBack;
     document.getElementById('btn-forward').disabled = !active?.canGoForward;
     document.getElementById('btn-reload').disabled = !active;
+    const saveBtn = document.getElementById('btn-save');
+    saveBtn.disabled = !active?.url;
+    saveBtn.textContent = active?.isSaved ? '★' : '☆';
+    saveBtn.classList.toggle('saved', !!active?.isSaved);
+    saveBtn.title = active?.isSaved ? 'Remove from portals' : 'Save to portals';
     if (document.activeElement !== address) {
       address.value = active?.url || '';
     }
@@ -225,6 +233,7 @@
   document.getElementById('btn-back').addEventListener('click', () => clientId && window.tabAPI.nav(clientId, 'back'));
   document.getElementById('btn-forward').addEventListener('click', () => clientId && window.tabAPI.nav(clientId, 'forward'));
   document.getElementById('btn-reload').addEventListener('click', () => clientId && window.tabAPI.nav(clientId, 'reload'));
+  document.getElementById('btn-save').addEventListener('click', () => clientId && window.tabAPI.toggleSave(clientId));
 
   address.addEventListener('keydown', e => {
     if (e.key === 'Enter' && clientId && address.value.trim()) {

@@ -189,6 +189,8 @@ function getFaviconUrl(url) {
 }
 
 function serializeState(clientId, state) {
+  const client = store.get('clients', []).find(c => c.id === clientId);
+  const savedUrls = new Set((client?.portals?.custom || []).map(p => p.url));
   return {
     clientId,
     clientName: state.clientName,
@@ -198,10 +200,12 @@ function serializeState(clientId, state) {
       const wc = t.wcv.webContents;
       const alive = !wc.isDestroyed();
       const url = alive ? wc.getURL() : '';
+      const cleanUrl = url.startsWith('data:') ? '' : url;
       return {
         title: t.title,
         favicon: t.favicon,
-        url: url.startsWith('data:') ? '' : url,
+        url: cleanUrl,
+        isSaved: savedUrls.has(cleanUrl),
         canGoBack: alive && wc.canGoBack(),
         canGoForward: alive && wc.canGoForward(),
       };
@@ -278,6 +282,40 @@ ipcMain.handle('tab-go', (_, clientId, url) => {
   if (!target) return;
   if (!/^https?:\/\//i.test(target)) target = 'https://' + target;
   wc.loadURL(target).catch(() => {});
+});
+
+// Bookmark star: save/remove the active tab's page as a custom portal
+ipcMain.handle('tab-toggle-save', (_, clientId) => {
+  const wc = activeWebContents(clientId);
+  if (!wc) return;
+  const url = wc.getURL();
+  if (!url || url.startsWith('data:')) return;
+
+  const clients = store.get('clients', []);
+  const client = clients.find(c => c.id === clientId);
+  if (!client) return;
+
+  const portals = {
+    disabled: client.portals?.disabled || [],
+    custom: client.portals?.custom || [],
+  };
+  const idx = portals.custom.findIndex(p => p.url === url);
+  if (idx >= 0) {
+    portals.custom.splice(idx, 1);
+  } else {
+    let name = (wc.getTitle() || '').trim();
+    if (name.length > 40) name = name.slice(0, 40).trim() + '…';
+    if (!name) { try { name = new URL(url).hostname; } catch { name = url; } }
+    portals.custom.push({ id: `custom-${Date.now()}`, name, url });
+  }
+  client.portals = portals;
+  store.set('clients', clients);
+
+  const state = clientWindows.get(clientId);
+  if (state) notifyTabBar(clientId, state);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('clients-updated', clients);
+  }
 });
 
 // Deny invasive permission requests (mic, camera, geolocation, ...) per client session.

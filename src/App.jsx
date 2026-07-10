@@ -23,6 +23,11 @@ export default function App() {
 
   useEffect(() => { loadClients(); }, [loadClients]);
 
+  // Live refresh when a portal window bookmarks/unbookmarks a page
+  useEffect(() => {
+    window.electronAPI.onClientsUpdated(list => setClients(list));
+  }, []);
+
   const handleSave = async (fields) => {
     if (editingClient?.id) {
       const updated = await window.electronAPI.updateClient(editingClient.id, fields);
