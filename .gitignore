@@ -1,3 +1,5 @@
 node_modules/
 dist/
 release/
+# override root .gitignore — build/ holds the app icon, not build output
+!build/
