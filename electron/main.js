@@ -5,6 +5,17 @@ const Store = require('electron-store');
 const { randomUUID } = require('crypto');
 
 const isDev = process.env.NODE_ENV === 'development';
+
+// One-time migration from the pre-rename data dir (m365-launcher → tenanthop):
+// carries over clients (config.json) and saved sign-in sessions (Partitions/)
+try {
+  const newDir = app.getPath('userData');
+  const oldDir = path.join(newDir, '..', 'm365-launcher');
+  if (!fs.existsSync(path.join(newDir, 'config.json')) && fs.existsSync(path.join(oldDir, 'config.json'))) {
+    fs.cpSync(oldDir, newDir, { recursive: true, force: false });
+  }
+} catch { /* fresh install or copy failure — start clean */ }
+
 const store = new Store();
 
 // Keep in sync with COLOR_PALETTE in src/components/ClientModal.jsx
@@ -23,7 +34,7 @@ function createMainWindow() {
     height: 720,
     minWidth: 800,
     minHeight: 500,
-    title: 'M365 Launcher',
+    title: 'TenantHop',
     backgroundColor: '#0f0f1a',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -109,7 +120,7 @@ ipcMain.handle('export-clients', async () => {
   const clients = store.get('clients', []);
   const { filePath, canceled } = await dialog.showSaveDialog(mainWindow, {
     title: 'Export clients',
-    defaultPath: 'm365-launcher-clients.json',
+    defaultPath: 'tenanthop-clients.json',
     filters: [{ name: 'JSON', extensions: ['json'] }],
   });
   if (canceled || !filePath) return false;

@@ -73,7 +73,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="header">
-        <span className="header-title">M365 Launcher</span>
+        <span className="header-title">TenantHop</span>
         <div className="header-actions">
           <button className="btn-header-action" onClick={handleImport}>Import</button>
           <button className="btn-header-action" onClick={handleExport}>Export</button>
