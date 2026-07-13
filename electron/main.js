@@ -73,6 +73,7 @@ ipcMain.handle('add-client', (_, { name, color, tenantDomain }) => {
     name,
     color: color || COLORS[clients.length % COLORS.length],
     tenantDomain: tenantDomain || '',
+    favorite: false,
   };
   clients.push(client);
   store.set('clients', clients);

@@ -2,14 +2,15 @@ import React, { useMemo, useState } from 'react';
 
 export default function ClientList({
   clients, selectedId, search, loading,
-  onSelect, onEdit, onDelete, onSearchChange,
+  onSelect, onDelete, onSearchChange, onToggleFavorite,
 }) {
   const [hoveredId, setHoveredId] = useState(null);
 
   const filtered = useMemo(() => {
-    if (!search) return clients;
-    const q = search.toLowerCase();
-    return clients.filter(c => c.name.toLowerCase().includes(q));
+    const list = !search
+      ? clients
+      : clients.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
+    return [...list].sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0));
   }, [clients, search]);
 
   return (
@@ -45,13 +46,17 @@ export default function ClientList({
             >
               <span className="color-dot" style={{ background: client.color || '#6b7280' }} />
               <span className="client-name">{client.name}</span>
+              <button
+                className="favorite-btn"
+                title={client.favorite ? 'Unpin' : 'Pin to top'}
+                style={{
+                  color: client.favorite ? (client.color || '#f59e0b') : '#8892a4',
+                  opacity: client.favorite || isHovered ? 1 : 0,
+                }}
+                onClick={e => { e.stopPropagation(); onToggleFavorite(client.id); }}
+              >{client.favorite ? '★' : '☆'}</button>
               {isHovered && (
                 <span className="client-actions">
-                  <button
-                    className="client-action-btn"
-                    title="Edit"
-                    onClick={e => { e.stopPropagation(); onEdit(client); }}
-                  >✎</button>
                   <button
                     className="client-action-btn danger"
                     title="Delete"

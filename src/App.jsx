@@ -3,7 +3,6 @@ import ClientList from './components/ClientList';
 import PortalPanel from './components/PortalPanel';
 import ClientModal from './components/ClientModal';
 import ImportModal from './components/ImportModal';
-import PortalsModal from './components/PortalsModal';
 
 export default function App() {
   const [clients, setClients] = useState([]);
@@ -11,7 +10,6 @@ export default function App() {
   const [search, setSearch] = useState('');
   const [editingClient, setEditingClient] = useState(null); // null=closed, {}=add, {id,...}=edit
   const [importList, setImportList] = useState(null); // null=closed, [...]=picker open
-  const [portalsClient, setPortalsClient] = useState(null); // client being customized
   const [loading, setLoading] = useState(true);
 
   const loadClients = useCallback(async () => {
@@ -55,10 +53,17 @@ export default function App() {
     setImportList(null);
   };
 
-  const handlePortalsSave = async (fields) => {
-    const updated = await window.electronAPI.updateClient(portalsClient.id, fields);
+  const handleUpdatePortals = async (portals) => {
+    if (!selectedClient) return;
+    const updated = await window.electronAPI.updateClient(selectedClient.id, { portals });
     setClients(prev => prev.map(c => c.id === updated.id ? updated : c));
-    setPortalsClient(null);
+  };
+
+  const handleToggleFavorite = async (id) => {
+    const client = clients.find(c => c.id === id);
+    if (!client) return;
+    const updated = await window.electronAPI.updateClient(id, { favorite: !client.favorite });
+    setClients(prev => prev.map(c => c.id === updated.id ? updated : c));
   };
 
   const handleDelete = async (id) => {
@@ -89,16 +94,16 @@ export default function App() {
           search={search}
           loading={loading}
           onSelect={setSelectedId}
-          onEdit={setEditingClient}
           onDelete={handleDelete}
           onSearchChange={setSearch}
+          onToggleFavorite={handleToggleFavorite}
         />
         <main className="content">
           {selectedClient ? (
             <PortalPanel
               client={selectedClient}
               onEdit={() => setEditingClient(selectedClient)}
-              onManagePortals={() => setPortalsClient(selectedClient)}
+              onUpdatePortals={handleUpdatePortals}
             />
           ) : (
             <div className="empty-state">
@@ -126,13 +131,6 @@ export default function App() {
         />
       )}
 
-      {portalsClient !== null && (
-        <PortalsModal
-          client={portalsClient}
-          onSave={handlePortalsSave}
-          onClose={() => setPortalsClient(null)}
-        />
-      )}
     </div>
   );
 }

@@ -176,6 +176,16 @@ button { cursor: pointer; border: none; outline: none; }
 }
 .color-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 6px currentColor; }
 .client-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.favorite-btn {
+  background: none;
+  border: none;
+  font-size: 13px;
+  padding: 2px 3px;
+  border-radius: 4px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: opacity .15s;
+}
 .client-actions { display: flex; gap: 2px; flex-shrink: 0; }
 .client-action-btn {
   background: none;
@@ -241,11 +251,13 @@ button { cursor: pointer; border: none; outline: none; }
   gap: 14px;
 }
 .portal-btn {
+  width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 13px;
   padding: 26px 14px 22px;
+  box-sizing: border-box;
   background: var(--bg2);
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -293,6 +305,48 @@ button { cursor: pointer; border: none; outline: none; }
   line-height: 1.3;
 }
 .portal-btn:hover .portal-name { color: var(--text); }
+
+.portal-tile { position: relative; }
+.portal-remove-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity .15s, color .15s, border-color .15s;
+}
+.portal-remove-btn:hover { color: #f87171; border-color: #7f1d1d; }
+
+.portal-add-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 13px;
+  padding: 26px 14px 22px;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  color: var(--dim);
+  transition: border-color .15s, color .15s;
+}
+.portal-add-tile:hover { border-color: var(--accent); color: var(--text); }
+.portal-add-icon {
+  width: 56px; height: 56px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.04);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px;
+}
 
 /* ── Modals ── */
 .modal-overlay {
