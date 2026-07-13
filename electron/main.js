@@ -710,6 +710,11 @@ ipcMain.handle('open-portal', (_, { clientId, portalUrl, portalName }) => {
   return true;
 });
 
+ipcMain.handle('switcher-toggle', (_, clientId) => {
+  const state = clientWindows.get(clientId);
+  if (state) toggleSwitcher(clientId, state);
+});
+
 ipcMain.handle('switcher-close', (_, clientId) => {
   const state = clientWindows.get(clientId);
   if (state?.switcherOpen) toggleSwitcher(clientId, state);
