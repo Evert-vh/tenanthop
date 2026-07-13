@@ -47,6 +47,23 @@
   }
   #tabs-wrap::-webkit-scrollbar { height: 0; }
 
+  #btn-new-tab {
+    width: 26px; height: 26px;
+    margin: 0 4px 6px 6px;
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    color: #8892a4;
+    font-size: 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .1s, color .1s;
+    -webkit-app-region: no-drag;
+    line-height: 1;
+  }
+  #btn-new-tab:hover { background: #252540; color: #e2e8f0; }
+
   .tab {
     display: flex;
     align-items: center;
@@ -158,7 +175,18 @@
 <script>
   let clientId = null;
   let state = { clientName: '', color: '#3b82f6', tabs: [], activeIdx: -1 };
+  let focusAddressOnNextUpdate = false;
   const address = document.getElementById('address');
+
+  const newTabBtn = document.createElement('button');
+  newTabBtn.id = 'btn-new-tab';
+  newTabBtn.title = 'New tab (Ctrl+T)';
+  newTabBtn.textContent = '+';
+  newTabBtn.addEventListener('click', () => {
+    if (!clientId) return;
+    focusAddressOnNextUpdate = true;
+    window.tabAPI.newTab(clientId);
+  });
 
   function render() {
     document.body.style.setProperty('--cc', state.color);
@@ -167,6 +195,7 @@
     dot.title = state.clientName;
 
     const wrap = document.getElementById('tabs-wrap');
+    newTabBtn.remove(); // detach before clearing, so the node (and its listener) survives
     wrap.innerHTML = '';
 
     state.tabs.forEach((tab, i) => {
@@ -206,6 +235,8 @@
       wrap.appendChild(el);
     });
 
+    wrap.appendChild(newTabBtn);
+
     const activeEl = wrap.children[state.activeIdx];
     if (activeEl) activeEl.scrollIntoView({ inline: 'nearest', block: 'nearest' });
 
@@ -221,6 +252,12 @@
     saveBtn.title = active?.isSaved ? 'Remove from portals' : 'Save to portals';
     if (document.activeElement !== address) {
       address.value = active?.url || '';
+    }
+
+    if (focusAddressOnNextUpdate) {
+      focusAddressOnNextUpdate = false;
+      address.focus();
+      address.select();
     }
   }
 

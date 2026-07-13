@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('tabAPI', {
   getState:   ()           => ipcRenderer.invoke('tab-get-state'),
   switchTab:  (cid, idx)   => ipcRenderer.invoke('tab-switch',  cid, idx),
   closeTab:   (cid, idx)   => ipcRenderer.invoke('tab-close',   cid, idx),
+  newTab:     (cid)        => ipcRenderer.invoke('tab-new',     cid),
   nav:        (cid, action)=> ipcRenderer.invoke('tab-nav',     cid, action),
   go:         (cid, url)   => ipcRenderer.invoke('tab-go',      cid, url),
   toggleSave: (cid)        => ipcRenderer.invoke('tab-toggle-save', cid),

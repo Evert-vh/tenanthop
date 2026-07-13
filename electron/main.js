@@ -48,6 +48,23 @@ function createMainWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   }
+
+  // Zoom shortcuts — no app menu, so wire these directly (matches portal windows)
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    const ctrl = input.control || input.meta;
+    const key = input.key.toLowerCase();
+    if (ctrl && (key === '=' || key === '+')) {
+      mainWindow.webContents.setZoomLevel(mainWindow.webContents.getZoomLevel() + 0.5);
+      event.preventDefault();
+    } else if (ctrl && key === '-') {
+      mainWindow.webContents.setZoomLevel(mainWindow.webContents.getZoomLevel() - 0.5);
+      event.preventDefault();
+    } else if (ctrl && key === '0') {
+      mainWindow.webContents.setZoomLevel(0);
+      event.preventDefault();
+    }
+  });
 }
 
 app.whenReady().then(() => {
@@ -284,9 +301,18 @@ function closeTab(clientId, state, idx) {
   notifyTabBar(clientId, state);
 }
 
+function newTab(clientId, state) {
+  return addTab(clientId, state, 'about:blank', 'New Tab');
+}
+
 ipcMain.handle('tab-close', (_, clientId, idx) => {
   const state = clientWindows.get(clientId);
   if (state) closeTab(clientId, state, idx);
+});
+
+ipcMain.handle('tab-new', (_, clientId) => {
+  const state = clientWindows.get(clientId);
+  if (state) newTab(clientId, state);
 });
 
 function activeWebContents(clientId) {
@@ -439,6 +465,7 @@ function addTab(clientId, state, url, initialTitle) {
     let handled = true;
 
     if (input.key === 'F5' || (ctrl && key === 'r')) wcv.webContents.reload();
+    else if (ctrl && key === 't') newTab(clientId, state);
     else if (ctrl && key === 'w') closeTab(clientId, state, state.tabs.indexOf(tab));
     else if (input.key === 'F12' || (ctrl && input.shift && key === 'i')) wcv.webContents.toggleDevTools();
     else if (ctrl && (key === '=' || key === '+')) wcv.webContents.setZoomLevel(wcv.webContents.getZoomLevel() + 0.5);
@@ -500,6 +527,17 @@ ipcMain.handle('open-portal', (_, { clientId, clientName, color, portalUrl, port
 
     state = { win, tabBarWcv, tabs: [], activeIdx: -1, clientName, color };
     clientWindows.set(clientId, state);
+
+    // Ctrl+T works even when focus is in the tab strip / address bar
+    tabBarWcv.webContents.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown') return;
+      const ctrl = input.control || input.meta;
+      if (ctrl && input.key.toLowerCase() === 't') {
+        newTab(clientId, state);
+        event.preventDefault();
+      }
+    });
+
     win.on('resize', () => resizeViews(state));
     win.on('closed', () => {
       state.tabs.forEach(t => { if (!t.wcv.webContents.isDestroyed()) t.wcv.webContents.destroy(); });
