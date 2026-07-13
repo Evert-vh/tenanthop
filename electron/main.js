@@ -235,6 +235,7 @@ const clientWindows = new Map();
 const TAB_BAR_H = 78; // tab row (40) + nav row (38)
 
 function getFaviconUrl(url) {
+  if (!url || url.startsWith('data:')) return null;
   try { return `https://www.google.com/s2/favicons?sz=32&domain=${new URL(url).hostname}`; }
   catch { return null; }
 }
@@ -307,7 +308,7 @@ function closeTab(clientId, state, idx) {
 }
 
 function newTab(clientId, state) {
-  return addTab(clientId, state, 'about:blank', 'New Tab');
+  return addTab(clientId, state, NEW_TAB_URL, 'New Tab');
 }
 
 ipcMain.handle('tab-close', (_, clientId, idx) => {
@@ -408,11 +409,31 @@ function isLoginPopup(url) {
   catch { return false; }
 }
 
+// Branded page shown for freshly-opened blank tabs, instead of a plain white screen.
+// A data: URL keeps the address bar empty (same treatment as about:blank) so it still
+// reads as "nothing typed yet" rather than showing a page URL.
+const NEW_TAB_URL = (() => {
+  let iconDataUri = '';
+  try {
+    const iconBuf = fs.readFileSync(path.join(__dirname, '..', 'build', 'icon.png'));
+    iconDataUri = `data:image/png;base64,${iconBuf.toString('base64')}`;
+  } catch { /* icon missing — page still renders without it */ }
+  const html = `<!doctype html><html><body style="margin:0;height:100vh;background:#0f0f1a;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+    <div style="text-align:center">
+      ${iconDataUri ? `<img src="${iconDataUri}" width="88" height="88" style="border-radius:20px;margin-bottom:18px;filter:drop-shadow(0 8px 24px rgba(0,0,0,.4))">` : ''}
+      <div style="color:#e2e8f0;font-size:20px;font-weight:700;letter-spacing:-.3px">TenantHub</div>
+      <div style="color:#8892a4;font-size:12px;margin-top:8px">Type a URL above to get started</div>
+    </div>
+  </body></html>`;
+  return 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
+})();
+
 function addTab(clientId, state, url, initialTitle) {
   const { win } = state;
   const { width, height } = win.getContentBounds();
 
   const wcv = new WebContentsView({
+    backgroundColor: '#0f0f1a',
     webPreferences: { partition: getClientPartition(clientId), nodeIntegration: false, contextIsolation: true },
   });
   win.contentView.addChildView(wcv);
