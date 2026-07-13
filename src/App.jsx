@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ClientList from './components/ClientList';
 import PortalPanel from './components/PortalPanel';
 import ClientModal from './components/ClientModal';
 import ImportModal from './components/ImportModal';
+import UpdateNotesModal from './components/UpdateNotesModal';
+import { DEFAULT_PORTALS } from './portals';
 
 export default function App() {
   const [clients, setClients] = useState([]);
@@ -12,6 +14,7 @@ export default function App() {
   const [importList, setImportList] = useState(null); // null=closed, [...]=picker open
   const [loading, setLoading] = useState(true);
   const [statuses, setStatuses] = useState({}); // clientId -> 'signed-in' | 'expired' | 'signed-out' | 'unknown'
+  const [updateNotes, setUpdateNotes] = useState(null);
 
   const loadClients = useCallback(async () => {
     setLoading(true);
@@ -32,6 +35,12 @@ export default function App() {
   useEffect(() => {
     window.electronAPI.getClientStatuses().then(setStatuses);
     window.electronAPI.onClientStatusesUpdated(setStatuses);
+  }, []);
+
+  // "What's new" — shows once per version, only when upgrading from a version
+  // the user has actually run before (not on a fresh install)
+  useEffect(() => {
+    window.electronAPI.getUpdateNotes().then(notes => { if (notes) setUpdateNotes(notes); });
   }, []);
 
   const handleSave = async (fields) => {
@@ -82,6 +91,27 @@ export default function App() {
   };
 
   const selectedClient = clients.find(c => c.id === selectedId) || null;
+
+  // Kept fresh every render so the one-time IPC listener below always acts on
+  // whichever client is currently selected, not whoever was selected at mount.
+  const selectedClientRef = useRef(selectedClient);
+  selectedClientRef.current = selectedClient;
+
+  useEffect(() => {
+    window.electronAPI.onOpenPortalSlot(n => {
+      const client = selectedClientRef.current;
+      if (!client) return;
+      const disabled = new Set(client.portals?.disabled || []);
+      const visible = DEFAULT_PORTALS.filter(p => !disabled.has(p.id));
+      const portal = [...visible, ...(client.portals?.custom || [])][n - 1];
+      if (!portal) return;
+      window.electronAPI.openPortal({
+        clientId: client.id,
+        portalUrl: portal.url,
+        portalName: portal.name,
+      });
+    });
+  }, []);
 
   return (
     <div className="app">
@@ -137,6 +167,16 @@ export default function App() {
           existing={clients}
           onConfirm={handleImportConfirm}
           onClose={() => setImportList(null)}
+        />
+      )}
+
+      {updateNotes !== null && (
+        <UpdateNotesModal
+          notes={updateNotes}
+          onClose={() => {
+            window.electronAPI.markUpdateSeen();
+            setUpdateNotes(null);
+          }}
         />
       )}
 

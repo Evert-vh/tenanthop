@@ -12,4 +12,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onClientsUpdated: (cb) => ipcRenderer.on('clients-updated', (_, list) => cb(list)),
   getClientStatuses: () => ipcRenderer.invoke('get-client-statuses'),
   onClientStatusesUpdated: (cb) => ipcRenderer.on('client-statuses-updated', (_, statuses) => cb(statuses)),
+  onOpenPortalSlot: (cb) => ipcRenderer.on('open-portal-slot', (_, n) => cb(n)),
+  getUpdateNotes: () => ipcRenderer.invoke('get-update-notes'),
+  markUpdateSeen: () => ipcRenderer.invoke('mark-update-seen'),
 });

@@ -18,9 +18,9 @@
   }
 
   #card {
-    width: 460px;
+    width: 480px;
     max-width: 90vw;
-    max-height: 60vh;
+    max-height: 64vh;
     background: #161625;
     border: 1px solid #2a2a40;
     border-radius: 14px;
@@ -56,18 +56,34 @@
   #list::-webkit-scrollbar { width: 5px; }
   #list::-webkit-scrollbar-thumb { background: #2a2a40; border-radius: 3px; }
 
+  .group-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .5px;
+    color: #8892a4;
+    padding: 8px 10px 4px;
+  }
+
   .row {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 9px 10px;
+    padding: 8px 10px;
     border-radius: 8px;
     cursor: pointer;
     font-size: 13px;
   }
   .row.active { background: #1e1e30; }
   .row .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
-  .row .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .text-block { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+  .row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .sub {
+    font-size: 10.5px;
+    color: #8892a4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .row .star { color: #f59e0b; font-size: 11px; flex-shrink: 0; }
   .row .current-tag {
     font-size: 10px; font-weight: 700;
@@ -95,59 +111,120 @@
 <body>
 <div id="card">
   <div id="search-row">
-    <input id="search" spellcheck="false" placeholder="Jump to client…">
+    <input id="search" spellcheck="false" placeholder="Jump to a client, or a client + portal…">
   </div>
   <div id="list"></div>
   <div id="hint">↑↓ to navigate · Enter to switch · Esc to close</div>
 </div>
 <script>
   let clients = [];
+  let defaultPortals = [];
   let currentClientId = null;
-  let filtered = [];
+  let filtered = []; // flat list of { type: 'client', client } | { type: 'portal', client, portal }
   let activeIdx = 0;
 
   const search = document.getElementById('search');
   const listEl = document.getElementById('list');
+  const PORTAL_RESULT_CAP = 8;
+
+  function tokensMatch(query, haystack) {
+    const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
+    const h = haystack.toLowerCase();
+    return tokens.every(t => h.includes(t));
+  }
+
+  function clientPortals(client) {
+    const disabled = new Set(client.portals?.disabled || []);
+    const visible = defaultPortals.filter(p => !disabled.has(p.id));
+    return [...visible, ...(client.portals?.custom || [])];
+  }
+
+  function computeResults() {
+    const q = search.value.trim();
+    const sortedClients = [...clients].sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0));
+
+    if (!q) {
+      return sortedClients.map(client => ({ type: 'client', client }));
+    }
+
+    const matchingClients = sortedClients
+      .filter(c => tokensMatch(q, c.name))
+      .map(client => ({ type: 'client', client }));
+
+    const portalResults = [];
+    for (const client of sortedClients) {
+      if (portalResults.length >= PORTAL_RESULT_CAP) break;
+      for (const portal of clientPortals(client)) {
+        if (tokensMatch(q, client.name + ' ' + portal.name)) {
+          portalResults.push({ type: 'portal', client, portal });
+          if (portalResults.length >= PORTAL_RESULT_CAP) break;
+        }
+      }
+    }
+
+    return [...matchingClients, ...portalResults];
+  }
 
   function render() {
-    const q = search.value.trim().toLowerCase();
-    filtered = clients
-      .filter(c => !q || c.name.toLowerCase().includes(q))
-      .sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0));
-
+    filtered = computeResults();
     if (activeIdx >= filtered.length) activeIdx = Math.max(0, filtered.length - 1);
 
     listEl.innerHTML = '';
     if (filtered.length === 0) {
       const empty = document.createElement('div');
       empty.id = 'empty';
-      empty.textContent = 'No matching clients';
+      empty.textContent = 'No matches';
       listEl.appendChild(empty);
       return;
     }
 
-    filtered.forEach((c, i) => {
+    const q = search.value.trim();
+    let printedClientLabel = false;
+    let printedPortalLabel = false;
+
+    filtered.forEach((item, i) => {
+      if (q && item.type === 'client' && !printedClientLabel) {
+        printedClientLabel = true;
+        listEl.appendChild(groupLabel('CLIENTS'));
+      }
+      if (q && item.type === 'portal' && !printedPortalLabel) {
+        printedPortalLabel = true;
+        listEl.appendChild(groupLabel('PORTALS'));
+      }
+
       const row = document.createElement('div');
       row.className = 'row' + (i === activeIdx ? ' active' : '');
 
       const dot = document.createElement('span');
       dot.className = 'dot';
-      dot.style.background = c.color || '#6b7280';
+      dot.style.background = item.client.color || '#6b7280';
       row.appendChild(dot);
 
+      const textBlock = document.createElement('div');
+      textBlock.className = 'text-block';
       const name = document.createElement('span');
       name.className = 'name';
-      name.textContent = c.name;
-      row.appendChild(name);
+      if (item.type === 'client') {
+        name.textContent = item.client.name;
+        textBlock.appendChild(name);
+      } else {
+        name.textContent = item.portal.name;
+        const sub = document.createElement('span');
+        sub.className = 'sub';
+        sub.textContent = item.client.name;
+        textBlock.appendChild(name);
+        textBlock.appendChild(sub);
+      }
+      row.appendChild(textBlock);
 
-      if (c.favorite) {
+      if (item.type === 'client' && item.client.favorite) {
         const star = document.createElement('span');
         star.className = 'star';
         star.textContent = '★';
         row.appendChild(star);
       }
 
-      if (c.id === currentClientId) {
+      if (item.type === 'client' && item.client.id === currentClientId) {
         const tag = document.createElement('span');
         tag.className = 'current-tag';
         tag.textContent = 'CURRENT';
@@ -159,14 +236,25 @@
       listEl.appendChild(row);
     });
 
-    const activeEl = listEl.children[activeIdx];
-    if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
+    const activeRow = [...listEl.querySelectorAll('.row')][activeIdx];
+    if (activeRow) activeRow.scrollIntoView({ block: 'nearest' });
+  }
+
+  function groupLabel(text) {
+    const el = document.createElement('div');
+    el.className = 'group-label';
+    el.textContent = text;
+    return el;
   }
 
   function select(i) {
-    const target = filtered[i];
-    if (!target) return;
-    window.switcherAPI.go(currentClientId, target.id);
+    const item = filtered[i];
+    if (!item) return;
+    if (item.type === 'portal') {
+      window.switcherAPI.go(currentClientId, item.client.id, { url: item.portal.url, name: item.portal.name });
+    } else {
+      window.switcherAPI.go(currentClientId, item.client.id);
+    }
   }
 
   search.addEventListener('input', () => { activeIdx = 0; render(); });
@@ -181,8 +269,9 @@
     if (e.target === document.body) window.switcherAPI.close(currentClientId);
   });
 
-  window.switcherAPI.onOpen(({ clients: c, currentClientId: cid }) => {
+  window.switcherAPI.onOpen(({ clients: c, currentClientId: cid, defaultPortals: dp }) => {
     clients = c;
+    defaultPortals = dp || [];
     currentClientId = cid;
     activeIdx = 0;
     search.value = '';

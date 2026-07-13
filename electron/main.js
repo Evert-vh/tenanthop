@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const Store = require('electron-store');
 const { randomUUID } = require('crypto');
+const DEFAULT_PORTAL_CATALOG = require('./default-portals');
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -71,6 +72,11 @@ function createMainWindow() {
       event.preventDefault();
     } else if (ctrl && key === '0') {
       mainWindow.webContents.setZoomLevel(0);
+      event.preventDefault();
+    } else if (ctrl && /^[1-9]$/.test(input.key)) {
+      // Renderer owns the portal grid (which tiles are visible depends on React
+      // state), so just forward which slot was requested.
+      mainWindow.webContents.send('open-portal-slot', parseInt(input.key, 10));
       event.preventDefault();
     }
   });
@@ -233,6 +239,38 @@ ipcMain.handle('merge-clients', (_, incoming) => {
   return clients;
 });
 
+// ---- Update notes ----
+// No auto-updater (the exe is unsigned and the release repo is private, so there's
+// no safe unauthenticated way to check GitHub for a newer build from inside the
+// app). Instead: whenever the installed version differs from the last one the user
+// actually ran, show what changed once. Add an entry here with each notable release.
+const CHANGELOG = {
+  '1.1.0': [
+    'Quick switcher (Ctrl+K) can now jump straight into a specific portal for any client, not just their window — try typing a client name plus a portal name.',
+    'Ctrl+1 through Ctrl+9 open a client’s portal tiles directly, in the order they appear in the grid.',
+    'A dot on each client in the sidebar shows whether they still have a signed-in session.',
+    'Ctrl+Shift+T (or right-click the tab strip) reopens the last tab you closed in a portal window.',
+    'Portal sessions now present as a normal Chrome browser instead of identifying as Electron, which can reduce how often Microsoft challenges for re-authentication.',
+  ],
+};
+
+ipcMain.handle('get-update-notes', () => {
+  const current = app.getVersion();
+  const lastSeen = store.get('lastSeenVersion');
+  if (!lastSeen) {
+    // First run with version tracking at all — nothing to compare against yet.
+    // Baseline silently rather than showing notes for a version they just installed.
+    store.set('lastSeenVersion', current);
+    return null;
+  }
+  if (lastSeen === current || !CHANGELOG[current]) return null;
+  return { version: current, notes: CHANGELOG[current] };
+});
+
+ipcMain.handle('mark-update-seen', () => {
+  store.set('lastSeenVersion', app.getVersion());
+});
+
 // ---- Portal windows (tabbed browser per client) ----
 
 const clientWindows = new Map();
@@ -321,7 +359,11 @@ function toggleSwitcher(clientId, state) {
     wcv.setBounds({ x: 0, y: 0, width, height });
     wcv.setVisible(true);
     wcv.webContents.focus();
-    wcv.webContents.send('switcher-open', { clients: store.get('clients', []), currentClientId: clientId });
+    wcv.webContents.send('switcher-open', {
+      clients: store.get('clients', []),
+      currentClientId: clientId,
+      defaultPortals: DEFAULT_PORTAL_CATALOG,
+    });
   } else {
     wcv.setVisible(false);
   }
@@ -720,7 +762,9 @@ ipcMain.handle('switcher-close', (_, clientId) => {
   if (state?.switcherOpen) toggleSwitcher(clientId, state);
 });
 
-ipcMain.handle('switcher-go', (_, fromClientId, targetClientId) => {
+// portal (optional): { url, name } — jump straight into a specific portal instead
+// of just focusing the client's window / giving them a blank tab
+ipcMain.handle('switcher-go', (_, fromClientId, targetClientId, portal) => {
   const fromState = clientWindows.get(fromClientId);
   if (fromState?.switcherOpen) toggleSwitcher(fromClientId, fromState);
 
@@ -728,6 +772,8 @@ ipcMain.handle('switcher-go', (_, fromClientId, targetClientId) => {
   if (!target) return false;
   if (target.win.isMinimized()) target.win.restore();
   target.win.focus();
-  if (target.tabs.length === 0) newTab(targetClientId, target);
+
+  if (portal?.url) addTab(targetClientId, target, portal.url, portal.name);
+  else if (target.tabs.length === 0) newTab(targetClientId, target);
   return true;
 });

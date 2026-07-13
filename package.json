@@ -1,7 +1,7 @@
 {
   "name": "tenanthub",
   "productName": "TenantHub",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Multi-tenant access for Office 365 admin portals",
   "author": "Evert van Heerden",
   "main": "electron/main.js",
