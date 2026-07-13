@@ -4,6 +4,7 @@ const path = require('path');
 const Store = require('electron-store');
 const { randomUUID } = require('crypto');
 const { DEFAULT_PORTALS: DEFAULT_PORTAL_CATALOG, GOOGLE_PORTALS: GOOGLE_PORTAL_CATALOG } = require('./default-portals');
+const { autoUpdater } = require('electron-updater');
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -82,9 +83,38 @@ function createMainWindow() {
   });
 }
 
+// ---- Auto-update ----
+// Checks the public GitHub repo's releases on launch. Only meaningful in a
+// packaged build — running from source has no installed app to update in place.
+function setupAutoUpdater() {
+  if (isDev) return;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('update-downloaded', (info) => {
+    dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      buttons: ['Restart now', 'Later'],
+      defaultId: 0,
+      cancelId: 1,
+      title: 'Update ready',
+      message: `TenantHub ${info.version} is ready to install.`,
+      detail: 'Restart now to finish updating, or it\'ll install next time you quit.',
+    }).then(({ response }) => {
+      if (response === 0) autoUpdater.quitAndInstall();
+    });
+  });
+
+  // Offline, no releases published yet, etc. — fail quietly, don't interrupt work
+  autoUpdater.on('error', () => {});
+
+  autoUpdater.checkForUpdates().catch(() => {});
+}
+
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   createMainWindow();
+  setupAutoUpdater();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
   });
@@ -253,10 +283,9 @@ ipcMain.handle('merge-clients', (_, incoming) => {
 });
 
 // ---- Update notes ----
-// No auto-updater (the exe is unsigned and the release repo is private, so there's
-// no safe unauthenticated way to check GitHub for a newer build from inside the
-// app). Instead: whenever the installed version differs from the last one the user
-// actually ran, show what changed once. Add an entry here with each notable release.
+// Shown once after auto-update installs a newer version (or after a manual
+// install/portable swap) — whenever the running version differs from the last one
+// the user actually launched. Add an entry here with each notable release.
 const CHANGELOG = {
   '1.1.0': [
     'Quick switcher (Ctrl+K) can now jump straight into a specific portal for any client, not just their window — try typing a client name plus a portal name.',
@@ -270,6 +299,9 @@ const CHANGELOG = {
   ],
   '1.2.0': [
     'Clients can now preload Google Workspace portals (Admin, Cloud, Vault, Groups) alongside or instead of Microsoft 365 — pick either or both when adding or editing a client.',
+  ],
+  '1.3.0': [
+    'TenantHub now checks for updates automatically and installs them in the background — you\'ll just get a "restart to finish updating" prompt when one\'s ready, instead of having to reinstall by hand.',
   ],
 };
 

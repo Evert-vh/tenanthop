@@ -82,7 +82,7 @@ export default function InfoModal({ onClose }) {
             <ul>
               <li>Portal sessions present as a normal Chrome browser (not Electron), which can reduce how often Microsoft challenges you to sign in again.</li>
               <li>Even so, how often you're asked to re-authenticate is mostly controlled by each tenant's own Entra ID Conditional Access "sign-in frequency" policy — that's outside anything a client app can override.</li>
-              <li>This is a personal/internal tool with no auto-updater. When you're running a newer version than last time, a short "what's new" note appears once.</li>
+              <li>TenantHub checks for updates automatically and installs them quietly in the background — you'll get a "restart to finish updating" prompt when one's ready. A short "what's new" note appears once after you're on a newer version.</li>
             </ul>
           </Section>
         </div>

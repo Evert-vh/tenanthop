@@ -1,7 +1,7 @@
 {
   "name": "tenanthub",
   "productName": "TenantHub",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Multi-tenant access for Office 365 admin portals",
   "author": "Evert van Heerden",
   "main": "electron/main.js",
@@ -16,6 +16,11 @@
     "productName": "TenantHub",
     "directories": {
       "output": "release"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "Evert-vh",
+      "repo": "tenanthop"
     },
     "asar": false,
     "files": [
@@ -53,7 +58,8 @@
     }
   },
   "dependencies": {
-    "electron-store": "8.1.0"
+    "electron-store": "8.1.0",
+    "electron-updater": "^6.8.9"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
