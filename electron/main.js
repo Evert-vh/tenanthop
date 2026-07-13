@@ -252,6 +252,9 @@ const CHANGELOG = {
     'Ctrl+Shift+T (or right-click the tab strip) reopens the last tab you closed in a portal window.',
     'Portal sessions now present as a normal Chrome browser instead of identifying as Electron, which can reduce how often Microsoft challenges for re-authentication.',
   ],
+  '1.1.1': [
+    'Added an "About TenantHub" page (ⓘ in the header) — a rundown of every feature and the full keyboard shortcut list, in one place.',
+  ],
 };
 
 ipcMain.handle('get-update-notes', () => {

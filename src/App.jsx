@@ -4,6 +4,7 @@ import PortalPanel from './components/PortalPanel';
 import ClientModal from './components/ClientModal';
 import ImportModal from './components/ImportModal';
 import UpdateNotesModal from './components/UpdateNotesModal';
+import InfoModal from './components/InfoModal';
 import { DEFAULT_PORTALS } from './portals';
 
 export default function App() {
@@ -15,6 +16,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [statuses, setStatuses] = useState({}); // clientId -> 'signed-in' | 'expired' | 'signed-out' | 'unknown'
   const [updateNotes, setUpdateNotes] = useState(null);
+  const [showInfo, setShowInfo] = useState(false);
 
   const loadClients = useCallback(async () => {
     setLoading(true);
@@ -118,6 +120,8 @@ export default function App() {
       <header className="header">
         <span className="header-title">TenantHub</span>
         <div className="header-actions">
+          <button className="btn-icon" title="About TenantHub" onClick={() => setShowInfo(true)}>ⓘ</button>
+          <div className="header-divider" />
           <button className="btn-header-action" onClick={handleImport}>Import</button>
           <button className="btn-header-action" onClick={handleExport}>Export</button>
           <div className="header-divider" />
@@ -179,6 +183,8 @@ export default function App() {
           }}
         />
       )}
+
+      {showInfo && <InfoModal onClose={() => setShowInfo(false)} />}
 
     </div>
   );
