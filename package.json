@@ -1,6 +1,6 @@
 {
-  "name": "tenanthop",
-  "productName": "TenantHop",
+  "name": "tenanthub",
+  "productName": "TenantHub",
   "version": "1.0.0",
   "description": "Multi-tenant access for Office 365 admin portals",
   "author": "Evert van Heerden",
@@ -12,8 +12,8 @@
     "package": "vite build && electron-builder --win"
   },
   "build": {
-    "appId": "com.dbest.tenanthop",
-    "productName": "TenantHop",
+    "appId": "com.dbest.tenanthub",
+    "productName": "TenantHub",
     "directories": {
       "output": "release"
     },
@@ -40,15 +40,15 @@
       ]
     },
     "portable": {
-      "artifactName": "TenantHop-portable.exe"
+      "artifactName": "TenantHub-portable.exe"
     },
     "nsis": {
-      "artifactName": "TenantHop-Setup-${version}.exe",
+      "artifactName": "TenantHub-Setup-${version}.exe",
       "oneClick": true,
       "perMachine": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "TenantHop"
+      "shortcutName": "TenantHub"
     }
   },
   "dependencies": {
