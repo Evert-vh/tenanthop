@@ -1,7 +1,12 @@
 import React, { useMemo, useState } from 'react';
 
+const STATUS_TITLE = {
+  'signed-in': 'Session active',
+  'expired': 'Session expired — sign-in needed',
+};
+
 export default function ClientList({
-  clients, selectedId, search, loading,
+  clients, selectedId, search, loading, statuses,
   onSelect, onDelete, onSearchChange, onToggleFavorite,
 }) {
   const [hoveredId, setHoveredId] = useState(null);
@@ -36,6 +41,7 @@ export default function ClientList({
         ) : filtered.map(client => {
           const isSelected = client.id === selectedId;
           const isHovered = client.id === hoveredId;
+          const status = statuses?.[client.id];
           return (
             <div
               key={client.id}
@@ -44,7 +50,12 @@ export default function ClientList({
               onMouseEnter={() => setHoveredId(client.id)}
               onMouseLeave={() => setHoveredId(null)}
             >
-              <span className="color-dot" style={{ background: client.color || '#6b7280' }} />
+              <span className="color-dot-wrap">
+                <span className="color-dot" style={{ background: client.color || '#6b7280' }} />
+                {(status === 'signed-in' || status === 'expired') && (
+                  <span className={`status-badge ${status}`} title={STATUS_TITLE[status]} />
+                )}
+              </span>
               <span className="client-name">{client.name}</span>
               <button
                 className="favorite-btn"

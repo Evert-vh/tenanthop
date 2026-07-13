@@ -54,6 +54,10 @@ function createMainWindow() {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   }
 
+  // Session status dots may be stale after time spent in portal windows — refresh
+  // whenever the user comes back to the launcher.
+  mainWindow.on('focus', () => pushClientStatuses());
+
   // Zoom shortcuts — no app menu, so wire these directly (matches portal windows)
   mainWindow.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
@@ -277,6 +281,101 @@ function resizeViews(state) {
     tab.wcv.setBounds({ x: 0, y: TAB_BAR_H, width, height: height - TAB_BAR_H });
     tab.wcv.setVisible(i === state.activeIdx);
   });
+  if (state.switcherWcv) state.switcherWcv.setBounds({ x: 0, y: 0, width, height });
+}
+
+// Ctrl+K quick switcher — jump to another client's window without going back to
+// the launcher. Built lazily per client window and reused for the life of the window.
+function toggleSwitcher(clientId, state) {
+  const { win } = state;
+  if (!state.switcherWcv) {
+    const wcv = new WebContentsView({
+      webPreferences: { preload: path.join(__dirname, 'switcher-preload.js'), contextIsolation: true, nodeIntegration: false },
+    });
+    wcv.setVisible(false);
+    win.contentView.addChildView(wcv);
+    const { width, height } = win.getContentBounds();
+    wcv.setBounds({ x: 0, y: 0, width, height });
+    wcv.webContents.loadFile(path.join(__dirname, 'switcher.html'));
+
+    wcv.webContents.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown') return;
+      const ctrl = input.control || input.meta;
+      if (input.key === 'Escape' || (ctrl && input.key.toLowerCase() === 'k')) {
+        toggleSwitcher(clientId, state);
+        event.preventDefault();
+      }
+    });
+
+    state.switcherWcv = wcv;
+    state.switcherOpen = false;
+  }
+
+  const wcv = state.switcherWcv;
+  state.switcherOpen = !state.switcherOpen;
+
+  if (state.switcherOpen) {
+    win.contentView.removeChildView(wcv);
+    win.contentView.addChildView(wcv); // re-add to bring to top z-order
+    const { width, height } = win.getContentBounds();
+    wcv.setBounds({ x: 0, y: 0, width, height });
+    wcv.setVisible(true);
+    wcv.webContents.focus();
+    wcv.webContents.send('switcher-open', { clients: store.get('clients', []), currentClientId: clientId });
+  } else {
+    wcv.setVisible(false);
+  }
+}
+
+// Create (or reuse) a client's BaseWindow + tab strip. Looks client name/color up
+// from the store so it's always current, regardless of who's asking (the launcher's
+// "open portal" click, or the quick switcher jumping in from another client window).
+function ensureClientWindow(clientId) {
+  let state = clientWindows.get(clientId);
+  if (state) return state;
+
+  const client = store.get('clients', []).find(c => c.id === clientId);
+  if (!client) return null;
+
+  const win = new BaseWindow({ width: 1400, height: 900, title: client.name, backgroundColor: '#0f0f1a' });
+
+  const tabBarWcv = new WebContentsView({
+    webPreferences: { preload: path.join(__dirname, 'tabbar-preload.js'), contextIsolation: true, nodeIntegration: false },
+  });
+  win.contentView.addChildView(tabBarWcv);
+  const { width } = win.getContentBounds();
+  tabBarWcv.setBounds({ x: 0, y: 0, width, height: TAB_BAR_H });
+  tabBarWcv.webContents.loadFile(path.join(__dirname, 'tabbar.html'));
+
+  state = { win, tabBarWcv, tabs: [], activeIdx: -1, clientName: client.name, color: client.color, closedStack: [] };
+  clientWindows.set(clientId, state);
+
+  // Tab-strip shortcuts work even when focus is in the address bar, not just in a tab
+  tabBarWcv.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    const ctrl = input.control || input.meta;
+    const key = input.key.toLowerCase();
+    if (ctrl && input.shift && key === 't') { reopenClosedTab(clientId, state); event.preventDefault(); }
+    else if (ctrl && key === 't') { newTab(clientId, state); event.preventDefault(); }
+    else if (ctrl && key === 'k') { toggleSwitcher(clientId, state); event.preventDefault(); }
+  });
+
+  tabBarWcv.webContents.on('context-menu', () => {
+    Menu.buildFromTemplate([
+      { label: 'New tab', click: () => newTab(clientId, state) },
+      { label: 'Reopen closed tab', enabled: state.closedStack.length > 0, click: () => reopenClosedTab(clientId, state) },
+    ]).popup({ window: win });
+  });
+
+  win.on('resize', () => resizeViews(state));
+  win.on('closed', () => {
+    state.tabs.forEach(t => { if (!t.wcv.webContents.isDestroyed()) t.wcv.webContents.destroy(); });
+    if (state.switcherWcv && !state.switcherWcv.webContents.isDestroyed()) state.switcherWcv.webContents.destroy();
+    clientWindows.delete(clientId);
+    pushClientStatuses();
+  });
+
+  return state;
 }
 
 ipcMain.handle('tab-get-state', (event) => {
@@ -294,11 +393,21 @@ ipcMain.handle('tab-switch', (_, clientId, idx) => {
   notifyTabBar(clientId, state);
 });
 
+const CLOSED_STACK_MAX = 15;
+
 function closeTab(clientId, state, idx) {
   const tab = state.tabs[idx];
   if (!tab) return;
+  const wc = tab.wcv.webContents;
+  if (!wc.isDestroyed()) {
+    const url = wc.getURL();
+    if (url && !url.startsWith('data:')) {
+      state.closedStack.push({ url, title: tab.title });
+      if (state.closedStack.length > CLOSED_STACK_MAX) state.closedStack.shift();
+    }
+  }
   state.win.contentView.removeChildView(tab.wcv);
-  if (!tab.wcv.webContents.isDestroyed()) tab.wcv.webContents.destroy();
+  if (!wc.isDestroyed()) wc.destroy();
   state.tabs.splice(idx, 1);
   if (state.tabs.length === 0) { state.win.close(); return; }
   if (idx < state.activeIdx) state.activeIdx--;
@@ -311,6 +420,12 @@ function newTab(clientId, state) {
   return addTab(clientId, state, NEW_TAB_URL, 'New Tab');
 }
 
+function reopenClosedTab(clientId, state) {
+  const entry = state.closedStack.pop();
+  if (!entry) return;
+  addTab(clientId, state, entry.url, entry.title);
+}
+
 ipcMain.handle('tab-close', (_, clientId, idx) => {
   const state = clientWindows.get(clientId);
   if (state) closeTab(clientId, state, idx);
@@ -319,6 +434,11 @@ ipcMain.handle('tab-close', (_, clientId, idx) => {
 ipcMain.handle('tab-new', (_, clientId) => {
   const state = clientWindows.get(clientId);
   if (state) newTab(clientId, state);
+});
+
+ipcMain.handle('tab-reopen-closed', (_, clientId) => {
+  const state = clientWindows.get(clientId);
+  if (state) reopenClosedTab(clientId, state);
 });
 
 function activeWebContents(clientId) {
@@ -379,6 +499,11 @@ ipcMain.handle('tab-toggle-save', (_, clientId) => {
   }
 });
 
+// A plain Chrome UA (no "Electron/x.x.x" token) — some identity providers treat the
+// default Electron UA as a less-trusted/unrecognized client and challenge more often.
+// Built from the real bundled Chromium version so it stays internally consistent.
+const CHROME_UA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`;
+
 // Deny invasive permission requests (mic, camera, geolocation, ...) per client session.
 // Electron grants everything by default without this.
 const configuredPartitions = new Set();
@@ -386,11 +511,45 @@ function getClientPartition(clientId) {
   const partition = `persist:client-${clientId}`;
   if (!configuredPartitions.has(partition)) {
     configuredPartitions.add(partition);
-    session.fromPartition(partition).setPermissionRequestHandler((_wc, permission, callback) => {
+    const ses = session.fromPartition(partition);
+    ses.setPermissionRequestHandler((_wc, permission, callback) => {
       callback(['fullscreen', 'clipboard-sanitized-write'].includes(permission));
     });
+    ses.setUserAgent(CHROME_UA);
   }
   return partition;
+}
+
+// Microsoft's persistent/session auth cookies live on the shared Entra ID login
+// domain regardless of which portal you're actually using — checking there tells us
+// whether a client still has a usable session without opening a window for them.
+async function getClientAuthStatus(clientId) {
+  try {
+    const ses = session.fromPartition(`persist:client-${clientId}`);
+    const cookies = await ses.cookies.get({});
+    const authCookies = cookies.filter(c =>
+      (c.name === 'ESTSAUTHPERSISTENT' || c.name === 'ESTSAUTH') &&
+      /login\.microsoftonline\.com|login\.microsoft\.com/.test(c.domain)
+    );
+    if (authCookies.length === 0) return 'signed-out';
+    const stillValid = authCookies.some(c => !c.expirationDate || c.expirationDate * 1000 > Date.now());
+    return stillValid ? 'signed-in' : 'expired';
+  } catch {
+    return 'unknown';
+  }
+}
+
+async function getAllClientStatuses() {
+  const clients = store.get('clients', []);
+  const entries = await Promise.all(clients.map(async c => [c.id, await getClientAuthStatus(c.id)]));
+  return Object.fromEntries(entries);
+}
+
+ipcMain.handle('get-client-statuses', () => getAllClientStatuses());
+
+async function pushClientStatuses() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send('client-statuses-updated', await getAllClientStatuses());
 }
 
 // AAD auth popups talk back to their opener via postMessage — they must stay
@@ -491,8 +650,10 @@ function addTab(clientId, state, url, initialTitle) {
     let handled = true;
 
     if (input.key === 'F5' || (ctrl && key === 'r')) wcv.webContents.reload();
+    else if (ctrl && input.shift && key === 't') reopenClosedTab(clientId, state);
     else if (ctrl && key === 't') newTab(clientId, state);
     else if (ctrl && key === 'w') closeTab(clientId, state, state.tabs.indexOf(tab));
+    else if (ctrl && key === 'k') toggleSwitcher(clientId, state);
     else if (input.key === 'F12' || (ctrl && input.shift && key === 'i')) wcv.webContents.toggleDevTools();
     else if (ctrl && (key === '=' || key === '+')) wcv.webContents.setZoomLevel(wcv.webContents.getZoomLevel() + 0.5);
     else if (ctrl && key === '-') wcv.webContents.setZoomLevel(wcv.webContents.getZoomLevel() - 0.5);
@@ -537,44 +698,31 @@ function addTab(clientId, state, url, initialTitle) {
   return tab;
 }
 
-ipcMain.handle('open-portal', (_, { clientId, clientName, color, portalUrl, portalName }) => {
-  let state = clientWindows.get(clientId);
+ipcMain.handle('open-portal', (_, { clientId, portalUrl, portalName }) => {
+  const state = ensureClientWindow(clientId);
+  if (!state) return false;
 
-  if (!state) {
-    const win = new BaseWindow({ width: 1400, height: 900, title: clientName, backgroundColor: '#0f0f1a' });
-
-    const tabBarWcv = new WebContentsView({
-      webPreferences: { preload: path.join(__dirname, 'tabbar-preload.js'), contextIsolation: true, nodeIntegration: false },
-    });
-    win.contentView.addChildView(tabBarWcv);
-    const { width } = win.getContentBounds();
-    tabBarWcv.setBounds({ x: 0, y: 0, width, height: TAB_BAR_H });
-    tabBarWcv.webContents.loadFile(path.join(__dirname, 'tabbar.html'));
-
-    state = { win, tabBarWcv, tabs: [], activeIdx: -1, clientName, color };
-    clientWindows.set(clientId, state);
-
-    // Ctrl+T works even when focus is in the tab strip / address bar
-    tabBarWcv.webContents.on('before-input-event', (event, input) => {
-      if (input.type !== 'keyDown') return;
-      const ctrl = input.control || input.meta;
-      if (ctrl && input.key.toLowerCase() === 't') {
-        newTab(clientId, state);
-        event.preventDefault();
-      }
-    });
-
-    win.on('resize', () => resizeViews(state));
-    win.on('closed', () => {
-      state.tabs.forEach(t => { if (!t.wcv.webContents.isDestroyed()) t.wcv.webContents.destroy(); });
-      clientWindows.delete(clientId);
-    });
-  }
-
-  const { win } = state;
-  if (win.isMinimized()) win.restore();
-  win.focus();
+  if (state.win.isMinimized()) state.win.restore();
+  state.win.focus();
 
   addTab(clientId, state, portalUrl, portalName);
+  pushClientStatuses();
+  return true;
+});
+
+ipcMain.handle('switcher-close', (_, clientId) => {
+  const state = clientWindows.get(clientId);
+  if (state?.switcherOpen) toggleSwitcher(clientId, state);
+});
+
+ipcMain.handle('switcher-go', (_, fromClientId, targetClientId) => {
+  const fromState = clientWindows.get(fromClientId);
+  if (fromState?.switcherOpen) toggleSwitcher(fromClientId, fromState);
+
+  const target = ensureClientWindow(targetClientId);
+  if (!target) return false;
+  if (target.win.isMinimized()) target.win.restore();
+  target.win.focus();
+  if (target.tabs.length === 0) newTab(targetClientId, target);
   return true;
 });

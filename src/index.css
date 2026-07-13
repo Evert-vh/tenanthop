@@ -174,7 +174,17 @@ button { cursor: pointer; border: none; outline: none; }
   background: var(--accent);
   border-radius: 0 3px 3px 0;
 }
+.color-dot-wrap { position: relative; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
 .color-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 6px currentColor; }
+.status-badge {
+  position: absolute;
+  bottom: -3px; right: -3px;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid var(--bg2);
+}
+.status-badge.signed-in { background: #22c55e; }
+.status-badge.expired { background: #f59e0b; }
 .client-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .favorite-btn {
   background: none;

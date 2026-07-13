@@ -10,4 +10,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   importClients: () => ipcRenderer.invoke('import-clients'),
   mergeClients: (incoming) => ipcRenderer.invoke('merge-clients', incoming),
   onClientsUpdated: (cb) => ipcRenderer.on('clients-updated', (_, list) => cb(list)),
+  getClientStatuses: () => ipcRenderer.invoke('get-client-statuses'),
+  onClientStatusesUpdated: (cb) => ipcRenderer.on('client-statuses-updated', (_, statuses) => cb(statuses)),
 });

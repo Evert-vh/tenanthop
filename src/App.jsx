@@ -11,6 +11,7 @@ export default function App() {
   const [editingClient, setEditingClient] = useState(null); // null=closed, {}=add, {id,...}=edit
   const [importList, setImportList] = useState(null); // null=closed, [...]=picker open
   const [loading, setLoading] = useState(true);
+  const [statuses, setStatuses] = useState({}); // clientId -> 'signed-in' | 'expired' | 'signed-out' | 'unknown'
 
   const loadClients = useCallback(async () => {
     setLoading(true);
@@ -24,6 +25,13 @@ export default function App() {
   // Live refresh when a portal window bookmarks/unbookmarks a page
   useEffect(() => {
     window.electronAPI.onClientsUpdated(list => setClients(list));
+  }, []);
+
+  // Session status dots — fetch once, then take live pushes (a portal window
+  // closing, or this window regaining focus, both trigger a refresh from main)
+  useEffect(() => {
+    window.electronAPI.getClientStatuses().then(setStatuses);
+    window.electronAPI.onClientStatusesUpdated(setStatuses);
   }, []);
 
   const handleSave = async (fields) => {
@@ -93,6 +101,7 @@ export default function App() {
           selectedId={selectedId}
           search={search}
           loading={loading}
+          statuses={statuses}
           onSelect={setSelectedId}
           onDelete={handleDelete}
           onSearchChange={setSearch}
