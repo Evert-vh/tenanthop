@@ -5,7 +5,7 @@ import ClientModal from './components/ClientModal';
 import ImportModal from './components/ImportModal';
 import UpdateNotesModal from './components/UpdateNotesModal';
 import InfoModal from './components/InfoModal';
-import { DEFAULT_PORTALS } from './portals';
+import { visiblePortalsFor } from './portals';
 
 export default function App() {
   const [clients, setClients] = useState([]);
@@ -103,9 +103,7 @@ export default function App() {
     window.electronAPI.onOpenPortalSlot(n => {
       const client = selectedClientRef.current;
       if (!client) return;
-      const disabled = new Set(client.portals?.disabled || []);
-      const visible = DEFAULT_PORTALS.filter(p => !disabled.has(p.id));
-      const portal = [...visible, ...(client.portals?.custom || [])][n - 1];
+      const portal = [...visiblePortalsFor(client), ...(client.portals?.custom || [])][n - 1];
       if (!portal) return;
       window.electronAPI.openPortal({
         clientId: client.id,

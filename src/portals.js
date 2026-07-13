@@ -10,6 +10,10 @@ import purviewIcon from './assets/portals/purview.svg';
 import azureIcon from './assets/portals/azure.svg';
 import partnerIcon from './assets/portals/partner.svg';
 import billingIcon from './assets/portals/billing.svg';
+import googleAdminIcon from './assets/portals/google-admin.svg';
+import googleCloudIcon from './assets/portals/google-cloud.svg';
+import googleVaultIcon from './assets/portals/google-vault.svg';
+import googleGroupsIcon from './assets/portals/google-groups.svg';
 
 export const DEFAULT_PORTALS = [
   { id: 'admin',      name: 'M365 Admin',     url: 'https://admin.microsoft.com',                                 icon: m365Icon },
@@ -25,3 +29,22 @@ export const DEFAULT_PORTALS = [
   { id: 'partner',    name: 'Partner Center', url: 'https://partner.microsoft.com',                               icon: partnerIcon },
   { id: 'billing',    name: 'Billing',        url: 'https://admin.microsoft.com/Adminportal/Home#/subscriptions', icon: billingIcon },
 ];
+
+export const GOOGLE_PORTALS = [
+  { id: 'google-admin',  name: 'Google Admin',  url: 'https://admin.google.com',         icon: googleAdminIcon },
+  { id: 'google-cloud',  name: 'Google Cloud',  url: 'https://console.cloud.google.com', icon: googleCloudIcon },
+  { id: 'google-vault',  name: 'Google Vault',  url: 'https://vault.google.com',         icon: googleVaultIcon },
+  { id: 'google-groups', name: 'Google Groups', url: 'https://groups.google.com',        icon: googleGroupsIcon },
+];
+
+// Which catalogs are active for a client, honoring the disabled-tile list. Custom
+// portals are handled separately by callers (not part of any catalog).
+export function visiblePortalsFor(client) {
+  const disabled = new Set(client.portals?.disabled || []);
+  const platforms = client.platforms || { m365: true, google: false };
+  const catalogs = [
+    ...(platforms.m365 !== false ? DEFAULT_PORTALS : []),
+    ...(platforms.google ? GOOGLE_PORTALS : []),
+  ];
+  return catalogs.filter(p => !disabled.has(p.id));
+}

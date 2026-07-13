@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const Store = require('electron-store');
 const { randomUUID } = require('crypto');
-const DEFAULT_PORTAL_CATALOG = require('./default-portals');
+const { DEFAULT_PORTALS: DEFAULT_PORTAL_CATALOG, GOOGLE_PORTALS: GOOGLE_PORTAL_CATALOG } = require('./default-portals');
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -98,7 +98,7 @@ app.on('window-all-closed', () => {
 
 ipcMain.handle('get-clients', () => store.get('clients', []));
 
-ipcMain.handle('add-client', (_, { name, color, tenantDomain }) => {
+ipcMain.handle('add-client', (_, { name, color, tenantDomain, platforms }) => {
   const clients = store.get('clients', []);
   const client = {
     id: randomUUID(),
@@ -106,6 +106,10 @@ ipcMain.handle('add-client', (_, { name, color, tenantDomain }) => {
     color: color || COLORS[clients.length % COLORS.length],
     tenantDomain: tenantDomain || '',
     favorite: false,
+    platforms: {
+      m365: platforms?.m365 !== false,
+      google: !!platforms?.google,
+    },
   };
   clients.push(client);
   store.set('clients', clients);
@@ -195,12 +199,20 @@ ipcMain.handle('import-clients', async () => {
       color: c.color || COLORS[i % COLORS.length],
       tenantDomain: c.tenantDomain || '',
       portals: sanitizePortals(c.portals),
+      platforms: sanitizePlatforms(c.platforms),
     })).filter(c => c.name);
     return sanitized.length ? sanitized : null;
   } catch {
     return null;
   }
 });
+
+function sanitizePlatforms(platforms) {
+  return {
+    m365: platforms?.m365 !== false,
+    google: !!platforms?.google,
+  };
+}
 
 // Merge selected imported clients into the existing list. Matches by id or
 // name (case-insensitive); matches keep their existing id so the client's
@@ -228,6 +240,7 @@ ipcMain.handle('merge-clients', (_, incoming) => {
       color: inc.color,
       tenantDomain: inc.tenantDomain || '',
       ...(inc.portals ? { portals: sanitizePortals(inc.portals) } : {}),
+      ...(inc.platforms ? { platforms: sanitizePlatforms(inc.platforms) } : {}),
     };
     if (idx >= 0) {
       clients[idx] = { ...clients[idx], ...fields };
@@ -254,6 +267,9 @@ const CHANGELOG = {
   ],
   '1.1.1': [
     'Added an "About TenantHub" page (ⓘ in the header) — a rundown of every feature and the full keyboard shortcut list, in one place.',
+  ],
+  '1.2.0': [
+    'Clients can now preload Google Workspace portals (Admin, Cloud, Vault, Groups) alongside or instead of Microsoft 365 — pick either or both when adding or editing a client.',
   ],
 };
 
@@ -366,6 +382,7 @@ function toggleSwitcher(clientId, state) {
       clients: store.get('clients', []),
       currentClientId: clientId,
       defaultPortals: DEFAULT_PORTAL_CATALOG,
+      googlePortals: GOOGLE_PORTAL_CATALOG,
     });
   } else {
     wcv.setVisible(false);

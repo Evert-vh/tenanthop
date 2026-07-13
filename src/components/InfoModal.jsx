@@ -33,6 +33,7 @@ export default function InfoModal({ onClose }) {
           <Section title="Clients">
             <ul>
               <li><strong>+ Add client</strong> creates a color-coded entry with its own private, persistent browser session — signing in once keeps you signed in across restarts.</li>
+              <li>Choose which portals to preload — <strong>Microsoft 365</strong>, <strong>Google Workspace</strong>, or both — from the "Portals to preload" checkboxes. This is just a starting point; edit a client any time to change it, or hide/add individual tiles from their portal grid.</li>
               <li>Hover a client to <strong>★ pin</strong> them to the top of the list or <strong>✕ delete</strong> them. Deleting also clears that client's saved sign-in.</li>
               <li>The dot on each client's row shows whether they still have a usable session: <span className="status-dot signed-in" /> signed in, <span className="status-dot expired" /> session expired, no dot = never signed in.</li>
               <li><strong>Import / Export</strong> save and load your client list as JSON. Import also accepts PortalsReleases <code>.cfg</code> exports and merges — it shows you what's new vs. what would update before touching anything.</li>
@@ -41,7 +42,7 @@ export default function InfoModal({ onClose }) {
 
           <Section title="Portals">
             <ul>
-              <li>Selecting a client shows a grid of Microsoft admin portals: M365 Admin, Entra ID, Exchange, Teams, Intune, SharePoint, Defender, Compliance, Purview, Azure, Partner Center, and Billing.</li>
+              <li>Selecting a client shows a grid of admin portals for whichever platform(s) they use. Microsoft 365: M365 Admin, Entra ID, Exchange, Teams, Intune, SharePoint, Defender, Compliance, Purview, Azure, Partner Center, and Billing. Google Workspace: Google Admin, Google Cloud, Google Vault, and Google Groups.</li>
               <li>Hover a tile for a ✕ to hide it for that client, or use the dashed <strong>+ Add portal</strong> tile to add a custom link (e.g. a client's PSA, ticketing portal, or line-of-business app).</li>
               <li>While browsing, the ☆ star in a portal window's address bar saves the current page as a custom portal for that client — handy for bookmarking a specific admin blade.</li>
             </ul>

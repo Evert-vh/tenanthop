@@ -119,6 +119,7 @@
 <script>
   let clients = [];
   let defaultPortals = [];
+  let googlePortals = [];
   let currentClientId = null;
   let filtered = []; // flat list of { type: 'client', client } | { type: 'portal', client, portal }
   let activeIdx = 0;
@@ -135,7 +136,12 @@
 
   function clientPortals(client) {
     const disabled = new Set(client.portals?.disabled || []);
-    const visible = defaultPortals.filter(p => !disabled.has(p.id));
+    const platforms = client.platforms || { m365: true, google: false };
+    const catalog = [
+      ...(platforms.m365 !== false ? defaultPortals : []),
+      ...(platforms.google ? googlePortals : []),
+    ];
+    const visible = catalog.filter(p => !disabled.has(p.id));
     return [...visible, ...(client.portals?.custom || [])];
   }
 
@@ -269,9 +275,10 @@
     if (e.target === document.body) window.switcherAPI.close(currentClientId);
   });
 
-  window.switcherAPI.onOpen(({ clients: c, currentClientId: cid, defaultPortals: dp }) => {
+  window.switcherAPI.onOpen(({ clients: c, currentClientId: cid, defaultPortals: dp, googlePortals: gp }) => {
     clients = c;
     defaultPortals = dp || [];
+    googlePortals = gp || [];
     currentClientId = cid;
     activeIdx = 0;
     search.value = '';

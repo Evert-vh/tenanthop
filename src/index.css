@@ -481,6 +481,12 @@ button { cursor: pointer; border: none; outline: none; }
 }
 .optional { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--dim); }
 .hint { font-size: 11px; color: var(--dim); }
+.platform-toggles { display: flex; gap: 16px; }
+.platform-toggle {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 400;
+  color: var(--text); cursor: pointer;
+}
 
 .text-input {
   background: var(--bg3);

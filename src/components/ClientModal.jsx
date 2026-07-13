@@ -12,10 +12,17 @@ export default function ClientModal({ client, onSave, onClose }) {
   const [name, setName] = useState(client?.name || '');
   const [color, setColor] = useState(client?.color || '#3b82f6');
   const [tenantDomain, setTenantDomain] = useState(client?.tenantDomain || '');
+  const [m365, setM365] = useState(client?.platforms?.m365 !== false); // default on
+  const [google, setGoogle] = useState(!!client?.platforms?.google);
 
   const handleSave = () => {
     if (!name.trim()) return;
-    onSave({ name: name.trim(), color, tenantDomain: tenantDomain.trim() });
+    onSave({
+      name: name.trim(),
+      color,
+      tenantDomain: tenantDomain.trim(),
+      platforms: { m365, google },
+    });
   };
 
   return (
@@ -56,6 +63,21 @@ export default function ClientModal({ client, onSave, onClose }) {
             <div className="color-preview" style={{ background: color }}>
               {name || 'Client name preview'}
             </div>
+          </div>
+
+          <div className="form-group">
+            <label>Portals to preload</label>
+            <div className="platform-toggles">
+              <label className="platform-toggle">
+                <input type="checkbox" checked={m365} onChange={e => setM365(e.target.checked)} />
+                Microsoft 365
+              </label>
+              <label className="platform-toggle">
+                <input type="checkbox" checked={google} onChange={e => setGoogle(e.target.checked)} />
+                Google Workspace
+              </label>
+            </div>
+            <div className="hint">You can still hide individual tiles or add custom portals afterward.</div>
           </div>
 
           <div className="form-group">

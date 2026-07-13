@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { DEFAULT_PORTALS } from '../portals';
+import { visiblePortalsFor } from '../portals';
 
 function normalizeUrl(raw) {
   let url = (raw || '').trim();
@@ -29,8 +29,7 @@ function CustomPortalIcon({ url, name }) {
 
 export default function PortalPanel({ client, onEdit, onUpdatePortals }) {
   const color = client.color || '#3b82f6';
-  const disabled = new Set(client.portals?.disabled || []);
-  const visible = DEFAULT_PORTALS.filter(p => !disabled.has(p.id));
+  const visible = visiblePortalsFor(client);
   const custom = client.portals?.custom || [];
 
   const [hoveredPortalId, setHoveredPortalId] = useState(null);
