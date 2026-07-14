@@ -237,7 +237,15 @@
         row.appendChild(tag);
       }
 
-      row.addEventListener('mouseenter', () => { activeIdx = i; render(); });
+      // Only toggle the highlight class on hover — don't call render() here.
+      // Rebuilding the whole list mid-hover replaces the exact DOM node the OS
+      // is tracking for the click gesture, which silently breaks native click
+      // synthesis for real mouse input (keyboard nav never hit this, since
+      // Enter reads straight from the `filtered` array, no DOM identity involved).
+      row.addEventListener('mouseenter', () => {
+        activeIdx = i;
+        listEl.querySelectorAll('.row').forEach((r, idx) => r.classList.toggle('active', idx === i));
+      });
       row.addEventListener('click', () => select(i));
       listEl.appendChild(row);
     });

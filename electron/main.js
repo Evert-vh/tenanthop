@@ -405,9 +405,16 @@ function toggleSwitcher(clientId, state) {
 
   if (state.switcherOpen) {
     win.contentView.removeChildView(wcv);
-    win.contentView.addChildView(wcv); // re-add to bring to top z-order
+    win.contentView.addChildView(wcv); // re-add to bring to top paint order
     const { width, height } = win.getContentBounds();
     wcv.setBounds({ x: 0, y: 0, width, height });
+    // Paint order alone isn't enough — WebContentsView reordering doesn't
+    // reliably win real mouse hit-testing against sibling views, so the tab
+    // bar and active tab underneath could still intercept clicks meant for
+    // the switcher. Hide them outright while it's open.
+    state.tabBarWcv.setVisible(false);
+    const activeTab = state.tabs[state.activeIdx];
+    if (activeTab) activeTab.wcv.setVisible(false);
     wcv.setVisible(true);
     wcv.webContents.focus();
     wcv.webContents.send('switcher-open', {
@@ -418,6 +425,8 @@ function toggleSwitcher(clientId, state) {
     });
   } else {
     wcv.setVisible(false);
+    state.tabBarWcv.setVisible(true);
+    resizeViews(state); // restores tab bounds/visibility for the active tab
   }
 }
 
