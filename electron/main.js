@@ -124,6 +124,8 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
+ipcMain.handle('get-app-version', () => app.getVersion());
+
 // ---- Client CRUD ----
 
 ipcMain.handle('get-clients', () => store.get('clients', []));
@@ -302,6 +304,11 @@ const CHANGELOG = {
   ],
   '1.3.0': [
     'TenantHub now checks for updates automatically and installs them in the background — you\'ll just get a "restart to finish updating" prompt when one\'s ready, instead of having to reinstall by hand.',
+  ],
+  '1.3.1': [
+    'Fixed: the client list sidebar didn\'t actually scroll once it had enough clients to overflow the window.',
+    'Fixed: selecting a result in the quick switcher (Ctrl+K) with the mouse did nothing — only arrow keys + Enter worked.',
+    'The current version number now shows next to the ⓘ button in the header.',
   ],
 };
 

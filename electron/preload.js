@@ -15,4 +15,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onOpenPortalSlot: (cb) => ipcRenderer.on('open-portal-slot', (_, n) => cb(n)),
   getUpdateNotes: () => ipcRenderer.invoke('get-update-notes'),
   markUpdateSeen: () => ipcRenderer.invoke('mark-update-seen'),
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
 });

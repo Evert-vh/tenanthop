@@ -17,6 +17,7 @@ export default function App() {
   const [statuses, setStatuses] = useState({}); // clientId -> 'signed-in' | 'expired' | 'signed-out' | 'unknown'
   const [updateNotes, setUpdateNotes] = useState(null);
   const [showInfo, setShowInfo] = useState(false);
+  const [appVersion, setAppVersion] = useState('');
 
   const loadClients = useCallback(async () => {
     setLoading(true);
@@ -43,6 +44,10 @@ export default function App() {
   // the user has actually run before (not on a fresh install)
   useEffect(() => {
     window.electronAPI.getUpdateNotes().then(notes => { if (notes) setUpdateNotes(notes); });
+  }, []);
+
+  useEffect(() => {
+    window.electronAPI.getAppVersion().then(setAppVersion);
   }, []);
 
   const handleSave = async (fields) => {
@@ -119,6 +124,7 @@ export default function App() {
         <span className="header-title">TenantHub</span>
         <div className="header-actions">
           <button className="btn-icon" title="About TenantHub" onClick={() => setShowInfo(true)}>ⓘ</button>
+          {appVersion && <span className="version-tag">v{appVersion}</span>}
           <div className="header-divider" />
           <button className="btn-header-action" onClick={handleImport}>Import</button>
           <button className="btn-header-action" onClick={handleExport}>Export</button>

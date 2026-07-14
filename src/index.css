@@ -67,6 +67,7 @@ button { cursor: pointer; border: none; outline: none; }
 }
 .btn-icon:hover:not(:disabled) { color: var(--text); background: var(--bg3); }
 .btn-icon:disabled { opacity: .4; cursor: default; }
+.version-tag { font-size: 11px; color: var(--dim); user-select: text; }
 
 .btn-header-action {
   background: rgba(255,255,255,0.06);
