@@ -16,4 +16,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getUpdateNotes: () => ipcRenderer.invoke('get-update-notes'),
   markUpdateSeen: () => ipcRenderer.invoke('mark-update-seen'),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  getTheme: () => ipcRenderer.invoke('get-theme'),
+  setTheme: (theme) => ipcRenderer.invoke('set-theme', theme),
+  onThemeChange: (cb) => ipcRenderer.on('theme-update', (_, theme) => cb(theme)),
 });

@@ -5,13 +5,33 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0a0a14;
+    --bg2: #161625;
+    --border: #2a2a40;
+    --divider: #16162599;
+    --text: #e2e8f0;
+    --dim: #8892a4;
+    --hover-bg: #161625;
+    --hover-bg-2: #3a3a52;
+  }
+  :root[data-theme="light"] {
+    --bg: #f4f5f7;
+    --bg2: #ffffff;
+    --border: #dde1e7;
+    --divider: #dde1e7;
+    --text: #1a1d24;
+    --dim: #6b7280;
+    --hover-bg: #eceef2;
+    --hover-bg-2: #dde1e7;
+  }
   html, body { height: 36px; overflow: hidden; }
   body {
-    background: #0a0a14;
+    background: var(--bg);
     display: flex;
     align-items: stretch;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    color: #e2e8f0;
+    color: var(--text);
     user-select: none;
     -webkit-app-region: drag;
   }
@@ -46,12 +66,14 @@
     transition: background .12s, border-color .12s;
     margin-top: 4px;
   }
-  .tenant-tab:hover { background: #161625; border-color: #252540; }
+  .tenant-tab:hover { background: var(--hover-bg); border-color: var(--border); }
   .tenant-tab.active {
-    background: #161625;
-    border-color: #2a2a40;
+    background: var(--hover-bg);
+    border-color: var(--border);
     box-shadow: inset 0 2px 0 0 var(--cc, #3b82f6);
   }
+  .tenant-tab.dragging { opacity: .4; }
+  .tenant-tab.drag-over { border-color: var(--cc, #3b82f6); }
 
   .tenant-tab .dot {
     width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
@@ -59,9 +81,9 @@
   }
   .tenant-tab .name {
     flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    font-size: 11.5px; font-weight: 500; color: #8892a4;
+    font-size: 11.5px; font-weight: 500; color: var(--dim);
   }
-  .tenant-tab.active .name { color: #e2e8f0; }
+  .tenant-tab.active .name { color: var(--text); }
 
   /* CSS-only hover reveal — no JS DOM rebuild on hover, ever (that's exactly what
      broke the quick switcher's mouse clicks before: rebuilding elements mid-hover
@@ -77,9 +99,9 @@
     line-height: 1;
   }
   .tenant-tab:hover .pop-out, .tenant-tab:hover .tclose,
-  .tenant-tab.active .pop-out, .tenant-tab.active .tclose { color: #8892a4; }
-  .tenant-tab .tclose:hover { background: #3a3a52 !important; color: #f87171 !important; }
-  .tenant-tab .pop-out:hover { background: #3a3a52 !important; color: #e2e8f0 !important; }
+  .tenant-tab.active .pop-out, .tenant-tab.active .tclose { color: var(--dim); }
+  .tenant-tab .tclose:hover { background: var(--hover-bg-2) !important; color: #f87171 !important; }
+  .tenant-tab .pop-out:hover { background: var(--hover-bg-2) !important; color: var(--text) !important; }
 
   #btn-add-tenant {
     width: 26px; height: 26px;
@@ -87,7 +109,7 @@
     flex-shrink: 0;
     border: none;
     background: transparent;
-    color: #8892a4;
+    color: var(--dim);
     font-size: 16px;
     border-radius: 6px;
     cursor: pointer;
@@ -96,7 +118,7 @@
     -webkit-app-region: no-drag;
     line-height: 1;
   }
-  #btn-add-tenant:hover { background: #252540; color: #e2e8f0; }
+  #btn-add-tenant:hover { background: var(--hover-bg-2); color: var(--text); }
 
   #merge-back {
     flex-shrink: 0;
@@ -106,17 +128,17 @@
     padding: 0 10px;
     font-size: 10.5px;
     font-weight: 500;
-    color: #8892a4;
+    color: var(--dim);
     background: transparent;
     border: none;
-    border-left: 1px solid #16162599;
+    border-left: 1px solid var(--divider);
     cursor: pointer;
     white-space: nowrap;
     -webkit-app-region: no-drag;
     transition: background .1s, color .1s;
   }
   #merge-back.show { display: flex; }
-  #merge-back:hover { background: #14141f; color: #e2e8f0; }
+  #merge-back:hover { background: var(--hover-bg); color: var(--text); }
 
   /* Reserves space for the native minimize/maximize/close buttons, which render as
      an overlay in the top-right corner now that the OS title bar is hidden. Windows'
@@ -133,6 +155,7 @@
   let state = { tenants: [], activeTenantId: null, canPopOut: false, canMergeBack: false };
   const tabsEl = document.getElementById('tenant-tabs');
   const mergeBtn = document.getElementById('merge-back');
+  let dragSrcIdx = null;
 
   const addTenantBtn = document.createElement('button');
   addTenantBtn.id = 'btn-add-tenant';
@@ -143,10 +166,35 @@
   function render() {
     addTenantBtn.remove(); // detach before clearing, so the node (and its listener) survives
     tabsEl.innerHTML = '';
-    state.tenants.forEach(t => {
+    state.tenants.forEach((t, i) => {
       const el = document.createElement('div');
       el.className = 'tenant-tab' + (t.clientId === state.activeTenantId ? ' active' : '');
       el.style.setProperty('--cc', t.color || '#3b82f6');
+      el.draggable = true;
+
+      el.addEventListener('dragstart', e => {
+        dragSrcIdx = i;
+        el.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', String(i));
+      });
+      el.addEventListener('dragover', e => {
+        if (dragSrcIdx === null) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        el.classList.add('drag-over');
+      });
+      el.addEventListener('dragleave', () => el.classList.remove('drag-over'));
+      el.addEventListener('drop', e => {
+        e.preventDefault();
+        el.classList.remove('drag-over');
+        if (dragSrcIdx !== null && dragSrcIdx !== i) window.tenantAPI.reorder(dragSrcIdx, i);
+        dragSrcIdx = null;
+      });
+      el.addEventListener('dragend', () => {
+        dragSrcIdx = null;
+        tabsEl.querySelectorAll('.tenant-tab').forEach(node => node.classList.remove('dragging', 'drag-over'));
+      });
 
       const dot = document.createElement('span');
       dot.className = 'dot';
@@ -194,6 +242,9 @@
 
   window.tenantAPI.onUpdate(s => { if (s) { state = s; render(); } });
   window.tenantAPI.getState().then(s => { if (s) { state = s; render(); } });
+
+  window.tenantAPI.getTheme().then(t => { document.documentElement.dataset.theme = t; });
+  window.tenantAPI.onThemeChange(t => { document.documentElement.dataset.theme = t; });
 </script>
 </body>
 </html>

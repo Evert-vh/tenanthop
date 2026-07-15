@@ -5,13 +5,37 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'; img-src 'self' https: data:">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f0f1a;
+    --bg2: #161625;
+    --bg3: #1e1e30;
+    --border: #2a2a40;
+    --divider: #1e1e35;
+    --text: #e2e8f0;
+    --text-soft: #c8d0de;
+    --dim: #8892a4;
+    --hover-bg: #252540;
+    --hover-bg-2: #3a3a52;
+  }
+  :root[data-theme="light"] {
+    --bg: #f4f5f7;
+    --bg2: #ffffff;
+    --bg3: #eceef2;
+    --border: #dde1e7;
+    --divider: #e4e7ec;
+    --text: #1a1d24;
+    --text-soft: #3a3f4a;
+    --dim: #6b7280;
+    --hover-bg: #eceef2;
+    --hover-bg-2: #dde1e7;
+  }
   html, body { height: 78px; overflow: hidden; }
   body {
-    background: #0f0f1a;
+    background: var(--bg);
     display: flex;
     flex-direction: column;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    color: #e2e8f0;
+    color: var(--text);
     user-select: none;
   }
 
@@ -53,7 +77,7 @@
     flex-shrink: 0;
     border: none;
     background: transparent;
-    color: #8892a4;
+    color: var(--dim);
     font-size: 16px;
     border-radius: 6px;
     cursor: pointer;
@@ -62,7 +86,7 @@
     -webkit-app-region: no-drag;
     line-height: 1;
   }
-  #btn-new-tab:hover { background: #252540; color: #e2e8f0; }
+  #btn-new-tab:hover { background: var(--hover-bg); color: var(--text); }
 
   .tab {
     display: flex;
@@ -81,14 +105,16 @@
     transition: background .12s, border-color .12s;
     margin-top: 4px;
   }
-  .tab:hover { background: #161625; border-color: #252540; }
+  .tab:hover { background: var(--bg2); border-color: var(--hover-bg); }
   .tab.active {
-    background: #161625;
-    border-color: #2a2a40;
+    background: var(--bg2);
+    border-color: var(--border);
     box-shadow: inset 0 2px 0 0 var(--cc, #3b82f6);
   }
+  .tab.dragging { opacity: .4; }
+  .tab.drag-over { border-color: var(--cc, #3b82f6); }
   .tab-favicon { width: 14px; height: 14px; flex-shrink: 0; border-radius: 2px; object-fit: contain; }
-  .tab-favicon-placeholder { width: 14px; height: 14px; flex-shrink: 0; border-radius: 2px; background: #2a2a40; }
+  .tab-favicon-placeholder { width: 14px; height: 14px; flex-shrink: 0; border-radius: 2px; background: var(--border); }
   .tab-title {
     flex: 1;
     overflow: hidden;
@@ -96,10 +122,10 @@
     white-space: nowrap;
     font-size: 11.5px;
     font-weight: 500;
-    color: #8892a4;
+    color: var(--dim);
     transition: color .12s;
   }
-  .tab.active .tab-title { color: #e2e8f0; }
+  .tab.active .tab-title { color: var(--text); }
   .tab-close {
     flex-shrink: 0;
     width: 16px; height: 16px;
@@ -111,8 +137,8 @@
     line-height: 1;
   }
   .tab:hover .tab-close,
-  .tab.active .tab-close { color: #8892a4; }
-  .tab-close:hover { background: #3a3a52 !important; color: #f87171 !important; }
+  .tab.active .tab-close { color: var(--dim); }
+  .tab-close:hover { background: var(--hover-bg-2) !important; color: #f87171 !important; }
 
   /* ── Row 2: navigation ── */
   #nav-row {
@@ -121,15 +147,15 @@
     align-items: center;
     gap: 4px;
     padding: 0 8px;
-    background: #161625;
-    border-bottom: 1px solid #1e1e35;
+    background: var(--bg2);
+    border-bottom: 1px solid var(--divider);
     flex-shrink: 0;
   }
   .nav-btn {
     width: 28px; height: 28px;
     border: none;
     background: transparent;
-    color: #8892a4;
+    color: var(--dim);
     font-size: 15px;
     border-radius: 6px;
     cursor: pointer;
@@ -138,16 +164,16 @@
     flex-shrink: 0;
     line-height: 1;
   }
-  .nav-btn:hover:not(:disabled) { background: #252540; color: #e2e8f0; }
+  .nav-btn:hover:not(:disabled) { background: var(--hover-bg); color: var(--text); }
   .nav-btn:disabled { opacity: .3; cursor: default; }
 
   #address {
     flex: 1;
     height: 26px;
-    background: #0f0f1a;
-    border: 1px solid #2a2a40;
+    background: var(--bg);
+    border: 1px solid var(--border);
     border-radius: 13px;
-    color: #c8d0de;
+    color: var(--text-soft);
     font-size: 12px;
     padding: 0 14px;
     outline: none;
@@ -155,7 +181,7 @@
     transition: border-color .15s;
     font-family: inherit;
   }
-  #address:focus { border-color: var(--cc, #3b82f6); color: #e2e8f0; }
+  #address:focus { border-color: var(--cc, #3b82f6); color: var(--text); }
   .nav-btn.saved { color: #fbbf24; }
   .nav-btn.saved:hover:not(:disabled) { color: #fbbf24; }
 
@@ -163,22 +189,22 @@
     display: flex; align-items: center; gap: 6px;
     height: 26px; padding: 0 9px 0 10px;
     flex-shrink: 0;
-    background: #0f0f1a;
-    border: 1px solid #2a2a40;
+    background: var(--bg);
+    border: 1px solid var(--border);
     border-radius: 13px;
-    color: #8892a4;
+    color: var(--dim);
     font-size: 11.5px;
     font-weight: 500;
     cursor: pointer;
     transition: border-color .15s, color .15s;
   }
-  #btn-switcher:hover { color: #e2e8f0; border-color: var(--cc, #3b82f6); }
+  #btn-switcher:hover { color: var(--text); border-color: var(--cc, #3b82f6); }
   #btn-switcher .kbd {
     font-size: 10px;
     font-weight: 600;
     padding: 1px 5px;
-    background: #1e1e30;
-    border: 1px solid #2a2a40;
+    background: var(--bg3);
+    border: 1px solid var(--border);
     border-radius: 4px;
     color: inherit;
   }
@@ -204,6 +230,7 @@
   let clientId = null;
   let state = { clientName: '', color: '#3b82f6', tabs: [], activeIdx: -1 };
   let focusAddressOnNextUpdate = false;
+  let dragSrcIdx = null;
   const address = document.getElementById('address');
 
   const newTabBtn = document.createElement('button');
@@ -229,6 +256,31 @@
     state.tabs.forEach((tab, i) => {
       const el = document.createElement('div');
       el.className = 'tab' + (i === state.activeIdx ? ' active' : '');
+      el.draggable = true;
+
+      el.addEventListener('dragstart', e => {
+        dragSrcIdx = i;
+        el.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', String(i));
+      });
+      el.addEventListener('dragover', e => {
+        if (dragSrcIdx === null) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        el.classList.add('drag-over');
+      });
+      el.addEventListener('dragleave', () => el.classList.remove('drag-over'));
+      el.addEventListener('drop', e => {
+        e.preventDefault();
+        el.classList.remove('drag-over');
+        if (clientId && dragSrcIdx !== null && dragSrcIdx !== i) window.tabAPI.reorderTab(clientId, dragSrcIdx, i);
+        dragSrcIdx = null;
+      });
+      el.addEventListener('dragend', () => {
+        dragSrcIdx = null;
+        wrap.querySelectorAll('.tab').forEach(t => t.classList.remove('dragging', 'drag-over'));
+      });
 
       if (tab.favicon) {
         const img = document.createElement('img');
@@ -314,6 +366,9 @@
 
   window.tabAPI.onUpdate(s => { clientId = s.clientId; state = s; render(); });
   window.tabAPI.getState().then(s => { if (s) { clientId = s.clientId; state = s; render(); } });
+
+  window.tabAPI.getTheme().then(t => { document.documentElement.dataset.theme = t; });
+  window.tabAPI.onThemeChange(t => { document.documentElement.dataset.theme = t; });
 </script>
 </body>
 </html>

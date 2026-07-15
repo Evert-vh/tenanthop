@@ -128,6 +128,28 @@ app.on('window-all-closed', () => {
 
 ipcMain.handle('get-app-version', () => app.getVersion());
 
+// ---- Theme ----
+// One preference shared across every window/view. Each renderer fetches the
+// current value on load; this pushes live updates to whatever's open right now.
+function broadcastTheme(theme) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('theme-update', theme);
+  for (const state of clientSessions.values()) {
+    if (!state.tabBarWcv.webContents.isDestroyed()) state.tabBarWcv.webContents.send('theme-update', theme);
+    if (state.switcherWcv && !state.switcherWcv.webContents.isDestroyed()) {
+      state.switcherWcv.webContents.send('theme-update', theme);
+    }
+  }
+  for (const info of windowState.values()) {
+    if (!info.tenantBarWcv.webContents.isDestroyed()) info.tenantBarWcv.webContents.send('theme-update', theme);
+  }
+}
+
+ipcMain.handle('get-theme', () => store.get('theme', 'dark'));
+ipcMain.handle('set-theme', (_, theme) => {
+  store.set('theme', theme);
+  broadcastTheme(theme);
+});
+
 // ---- Client CRUD ----
 
 ipcMain.handle('get-clients', () => store.get('clients', []));
@@ -318,6 +340,10 @@ const CHANGELOG = {
     'Clients now open as tabs alongside each other in one window by default, instead of every client getting its own separate window.',
     'Any client tab can be popped out into its own window (⇱ on the tab) for side-by-side work, and merged back in later (⇲ Merge window).',
     'Removed the separate title bar on the main window and client windows — window controls now sit inline with the header/tabs for a cleaner, more integrated look.',
+  ],
+  '1.5.0': [
+    'Portal tabs and client tabs can now be reordered by dragging them.',
+    'Added a light theme — toggle it from the ☀️/🌙 button in the header. Your choice is remembered and applies to every window.',
   ],
 };
 
@@ -758,6 +784,18 @@ ipcMain.handle('tab-switch', (_, clientId, idx) => {
   notifyTabBar(clientId, state);
 });
 
+ipcMain.handle('tab-reorder', (_, clientId, fromIdx, toIdx) => {
+  const state = clientSessions.get(clientId);
+  if (!state) return;
+  const { tabs } = state;
+  if (fromIdx === toIdx || fromIdx < 0 || toIdx < 0 || fromIdx >= tabs.length || toIdx >= tabs.length) return;
+  const activeTab = tabs[state.activeIdx];
+  const [moved] = tabs.splice(fromIdx, 1);
+  tabs.splice(toIdx, 0, moved);
+  state.activeIdx = tabs.indexOf(activeTab);
+  notifyTabBar(clientId, state);
+});
+
 const CLOSED_STACK_MAX = 15;
 
 function closeTab(clientId, state, idx) {
@@ -1126,6 +1164,18 @@ ipcMain.handle('tenant-switch', (event, clientId) => {
 ipcMain.handle('tenant-close', (event, clientId) => {
   for (const [win, info] of windowState) {
     if (info.tenantBarWcv.webContents === event.sender) { closeTenant(win, clientId); return; }
+  }
+});
+
+ipcMain.handle('tenant-reorder', (event, fromIdx, toIdx) => {
+  for (const [win, info] of windowState) {
+    if (info.tenantBarWcv.webContents !== event.sender) continue;
+    const { tenantIds } = info;
+    if (fromIdx === toIdx || fromIdx < 0 || toIdx < 0 || fromIdx >= tenantIds.length || toIdx >= tenantIds.length) return;
+    const [moved] = tenantIds.splice(fromIdx, 1);
+    tenantIds.splice(toIdx, 0, moved);
+    notifyTenantBar(win);
+    return;
   }
 });
 

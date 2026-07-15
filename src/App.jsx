@@ -18,6 +18,7 @@ export default function App() {
   const [updateNotes, setUpdateNotes] = useState(null);
   const [showInfo, setShowInfo] = useState(false);
   const [appVersion, setAppVersion] = useState('');
+  const [theme, setTheme] = useState('dark');
 
   const loadClients = useCallback(async () => {
     setLoading(true);
@@ -49,6 +50,18 @@ export default function App() {
   useEffect(() => {
     window.electronAPI.getAppVersion().then(setAppVersion);
   }, []);
+
+  // Theme — persisted in main, broadcast to every window so they all stay in sync.
+  useEffect(() => {
+    const apply = (t) => { setTheme(t); document.documentElement.dataset.theme = t; };
+    window.electronAPI.getTheme().then(apply);
+    window.electronAPI.onThemeChange(apply);
+  }, []);
+
+  const toggleTheme = () => {
+    const next = theme === 'light' ? 'dark' : 'light';
+    window.electronAPI.setTheme(next);
+  };
 
   const handleSave = async (fields) => {
     if (editingClient?.id) {
@@ -124,6 +137,9 @@ export default function App() {
         <span className="header-title">TenantHub</span>
         <div className="header-actions">
           <button className="btn-icon" title="About TenantHub" onClick={() => setShowInfo(true)}>ⓘ</button>
+          <button className="btn-icon" title="Toggle light/dark theme" onClick={toggleTheme}>
+            {theme === 'light' ? '🌙' : '☀️'}
+          </button>
           {appVersion && <span className="version-tag">v{appVersion}</span>}
           <div className="header-divider" />
           <button className="btn-header-action" onClick={handleImport}>Import</button>
