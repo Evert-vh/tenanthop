@@ -71,6 +71,7 @@ export default function InfoModal({ onClose }) {
                 <tr><td><Kbd>Ctrl T</Kbd></td><td>New tab (in a portal window)</td></tr>
                 <tr><td><Kbd>Ctrl Shift T</Kbd></td><td>Reopen the last closed tab</td></tr>
                 <tr><td><Kbd>Ctrl W</Kbd></td><td>Close current tab</td></tr>
+                <tr><td><Kbd>Ctrl F</Kbd></td><td>Find in page</td></tr>
                 <tr><td><Kbd>Ctrl R</Kbd> / <Kbd>F5</Kbd></td><td>Reload current tab</td></tr>
                 <tr><td><Kbd>Ctrl +</Kbd> / <Kbd>−</Kbd> / <Kbd>0</Kbd></td><td>Zoom in / out / reset</td></tr>
                 <tr><td><Kbd>Alt ←</Kbd> / <Kbd>→</Kbd></td><td>Back / forward</td></tr>

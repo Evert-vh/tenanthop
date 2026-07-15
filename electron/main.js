@@ -138,6 +138,9 @@ function broadcastTheme(theme) {
     if (state.switcherWcv && !state.switcherWcv.webContents.isDestroyed()) {
       state.switcherWcv.webContents.send('theme-update', theme);
     }
+    if (state.findBarWcv && !state.findBarWcv.webContents.isDestroyed()) {
+      state.findBarWcv.webContents.send('theme-update', theme);
+    }
   }
   for (const info of windowState.values()) {
     if (!info.tenantBarWcv.webContents.isDestroyed()) info.tenantBarWcv.webContents.send('theme-update', theme);
@@ -351,6 +354,9 @@ const CHANGELOG = {
   '1.5.2': [
     'The "What\'s new" popup now always shows the complete version history, not just what changed since you last opened the app — same scrollable list every time.',
   ],
+  '1.6.0': [
+    'Added find-in-page (Ctrl+F) — search the current portal tab, with a match counter and next/previous navigation.',
+  ],
 };
 
 function compareVersions(a, b) {
@@ -491,6 +497,7 @@ function resizeViews(state) {
     tab.wcv.setVisible(i === state.activeIdx);
   });
   if (state.switcherWcv) state.switcherWcv.setBounds({ x: 0, y: 0, width, height });
+  if (state.findBarOpen) positionFindBar(state);
 }
 
 // Make `clientId` the visible tenant in `win` — hides whichever tenant was showing,
@@ -504,6 +511,7 @@ function switchTenant(win, clientId) {
     prev.tabBarWcv.setVisible(false);
     const prevTab = prev.tabs[prev.activeIdx];
     if (prevTab) prevTab.wcv.setVisible(false);
+    if (prev.findBarOpen) toggleFindBar(info.activeTenantId, prev, false);
   }
 
   info.activeTenantId = clientId;
@@ -545,6 +553,7 @@ function createTenantWindow(initialTitle) {
     if (ctrl && input.shift && key === 't') { reopenClosedTab(info.activeTenantId, active); event.preventDefault(); }
     else if (ctrl && key === 't') { newTab(info.activeTenantId, active); event.preventDefault(); }
     else if (ctrl && key === 'k') { toggleSwitcher(info.activeTenantId, active); event.preventDefault(); }
+    else if (ctrl && key === 'f') { toggleFindBar(info.activeTenantId, active); event.preventDefault(); }
   });
 
   const info = { tenantBarWcv, tenantIds: [], activeTenantId: null };
@@ -574,6 +583,7 @@ function destroyTenant(clientId) {
   if (!tenant) return;
   tenant.tabs.forEach(t => { if (!t.wcv.webContents.isDestroyed()) t.wcv.webContents.destroy(); });
   if (tenant.switcherWcv && !tenant.switcherWcv.webContents.isDestroyed()) tenant.switcherWcv.webContents.destroy();
+  if (tenant.findBarWcv && !tenant.findBarWcv.webContents.isDestroyed()) tenant.findBarWcv.webContents.destroy();
   if (!tenant.tabBarWcv.webContents.isDestroyed()) tenant.tabBarWcv.webContents.destroy();
   clientSessions.delete(clientId);
 }
@@ -612,10 +622,13 @@ function popOutTenant(clientId) {
   const oldInfo = windowState.get(oldWin);
   if (!oldInfo || oldInfo.tenantIds.length <= 1) return false; // nothing to separate
 
+  if (tenant.findBarOpen) toggleFindBar(clientId, tenant, false);
+
   oldInfo.tenantIds = oldInfo.tenantIds.filter(id => id !== clientId);
   oldWin.contentView.removeChildView(tenant.tabBarWcv);
   tenant.tabs.forEach(t => oldWin.contentView.removeChildView(t.wcv));
   if (tenant.switcherWcv) oldWin.contentView.removeChildView(tenant.switcherWcv);
+  if (tenant.findBarWcv) oldWin.contentView.removeChildView(tenant.findBarWcv);
 
   if (oldInfo.activeTenantId === clientId) {
     oldInfo.activeTenantId = null;
@@ -628,6 +641,7 @@ function popOutTenant(clientId) {
   newWin.contentView.addChildView(tenant.tabBarWcv);
   tenant.tabs.forEach(t => newWin.contentView.addChildView(t.wcv));
   if (tenant.switcherWcv) newWin.contentView.addChildView(tenant.switcherWcv);
+  if (tenant.findBarWcv) newWin.contentView.addChildView(tenant.findBarWcv);
   tenant.win = newWin;
   newInfo.tenantIds.push(clientId);
 
@@ -650,13 +664,17 @@ function mergeTenant(clientId) {
   if (!targetWin) return false;
   const targetInfo = windowState.get(targetWin);
 
+  if (tenant.findBarOpen) toggleFindBar(clientId, tenant, false);
+
   oldWin.contentView.removeChildView(tenant.tabBarWcv);
   tenant.tabs.forEach(t => oldWin.contentView.removeChildView(t.wcv));
   if (tenant.switcherWcv) oldWin.contentView.removeChildView(tenant.switcherWcv);
+  if (tenant.findBarWcv) oldWin.contentView.removeChildView(tenant.findBarWcv);
 
   targetWin.contentView.addChildView(tenant.tabBarWcv);
   tenant.tabs.forEach(t => targetWin.contentView.addChildView(t.wcv));
   if (tenant.switcherWcv) targetWin.contentView.addChildView(tenant.switcherWcv);
+  if (tenant.findBarWcv) targetWin.contentView.addChildView(tenant.findBarWcv);
   tenant.win = targetWin;
   targetInfo.tenantIds.push(clientId);
 
@@ -669,6 +687,61 @@ function mergeTenant(clientId) {
   targetWin.focus();
   lastFocusedTenantWin = targetWin;
   return true;
+}
+
+// Ctrl+F find-in-page — a small overlay bar, corner-anchored over the active tab's
+// own content (unlike the switcher, it doesn't hide what's underneath: matches
+// highlight live in the page via the tab's own findInPage()).
+const FIND_BAR_W = 320;
+const FIND_BAR_H = 40;
+
+function positionFindBar(state) {
+  if (!state.findBarWcv) return;
+  const { width } = state.win.getContentBounds();
+  state.findBarWcv.setBounds({
+    x: width - FIND_BAR_W - 12,
+    y: TENANT_BAR_H + TAB_BAR_H + 8,
+    width: FIND_BAR_W,
+    height: FIND_BAR_H,
+  });
+}
+
+function toggleFindBar(clientId, state, forceOpen) {
+  const { win } = state;
+  if (!state.findBarWcv) {
+    const wcv = new WebContentsView({
+      webPreferences: { preload: path.join(__dirname, 'findbar-preload.js'), contextIsolation: true, nodeIntegration: false },
+    });
+    wcv.setVisible(false);
+    win.contentView.addChildView(wcv);
+    wcv.webContents.loadFile(path.join(__dirname, 'findbar.html'));
+    state.findBarWcv = wcv;
+    state.findBarOpen = false;
+  }
+
+  const wcv = state.findBarWcv;
+  const shouldOpen = forceOpen !== undefined ? forceOpen : !state.findBarOpen;
+  if (shouldOpen === state.findBarOpen) {
+    if (shouldOpen) wcv.webContents.focus();
+    return;
+  }
+  state.findBarOpen = shouldOpen;
+
+  if (shouldOpen) {
+    win.contentView.removeChildView(wcv);
+    win.contentView.addChildView(wcv); // bring to top paint order
+    positionFindBar(state);
+    wcv.setVisible(true);
+    wcv.webContents.send('findbar-open');
+    wcv.webContents.focus();
+  } else {
+    wcv.setVisible(false);
+    const activeTab = state.tabs[state.activeIdx];
+    if (activeTab && !activeTab.wcv.webContents.isDestroyed()) {
+      activeTab.wcv.webContents.stopFindInPage('clearSelection');
+      activeTab.wcv.webContents.focus();
+    }
+  }
 }
 
 // Ctrl+K quick switcher — jump to another client without leaving this window.
@@ -773,6 +846,7 @@ function ensureClientSession(clientId, opts = {}) {
     if (ctrl && input.shift && key === 't') { reopenClosedTab(clientId, tenant); event.preventDefault(); }
     else if (ctrl && key === 't') { newTab(clientId, tenant); event.preventDefault(); }
     else if (ctrl && key === 'k') { toggleSwitcher(clientId, tenant); event.preventDefault(); }
+    else if (ctrl && key === 'f') { toggleFindBar(clientId, tenant); event.preventDefault(); }
   });
 
   tabBarWcv.webContents.on('context-menu', () => {
@@ -803,6 +877,7 @@ ipcMain.handle('tab-get-state', (event) => {
 ipcMain.handle('tab-switch', (_, clientId, idx) => {
   const state = clientSessions.get(clientId);
   if (!state) return;
+  if (state.findBarOpen) toggleFindBar(clientId, state, false);
   state.tabs.forEach((t, i) => t.wcv.setVisible(i === idx));
   state.activeIdx = idx;
   notifyTabBar(clientId, state);
@@ -825,6 +900,7 @@ const CLOSED_STACK_MAX = 15;
 function closeTab(clientId, state, idx) {
   const tab = state.tabs[idx];
   if (!tab) return;
+  if (idx === state.activeIdx && state.findBarOpen) toggleFindBar(clientId, state, false);
   const wc = tab.wcv.webContents;
   if (!wc.isDestroyed()) {
     const url = wc.getURL();
@@ -1045,6 +1121,14 @@ function addTab(clientId, state, url, initialTitle) {
     notifyTabBar(clientId, state);
   });
   wcv.webContents.on('did-navigate-in-page', () => notifyTabBar(clientId, state));
+  wcv.webContents.on('found-in-page', (_, result) => {
+    if (state.findBarWcv && !state.findBarWcv.webContents.isDestroyed()) {
+      state.findBarWcv.webContents.send('findbar-result', {
+        matches: result.matches,
+        activeMatchOrdinal: result.activeMatchOrdinal,
+      });
+    }
+  });
 
   // Login popups stay popups (they postMessage back to their opener);
   // everything else target="_blank" / window.open becomes a new tab
@@ -1086,6 +1170,7 @@ function addTab(clientId, state, url, initialTitle) {
     else if (ctrl && key === 't') newTab(clientId, state);
     else if (ctrl && key === 'w') closeTab(clientId, state, state.tabs.indexOf(tab));
     else if (ctrl && key === 'k') toggleSwitcher(clientId, state);
+    else if (ctrl && key === 'f') toggleFindBar(clientId, state);
     else if (input.key === 'F12' || (ctrl && input.shift && key === 'i')) wcv.webContents.toggleDevTools();
     else if (ctrl && (key === '=' || key === '+')) wcv.webContents.setZoomLevel(wcv.webContents.getZoomLevel() + 0.5);
     else if (ctrl && key === '-') wcv.webContents.setZoomLevel(wcv.webContents.getZoomLevel() - 0.5);
@@ -1168,6 +1253,40 @@ ipcMain.handle('switcher-go', (_, fromClientId, targetClientId, portal) => {
   if (portal?.url) addTab(targetClientId, target, portal.url, portal.name);
   else if (target.tabs.length === 0) newTab(targetClientId, target);
   return true;
+});
+
+// ---- Find in page (Ctrl+F) ----
+
+function findStateByFindBarSender(sender) {
+  for (const [clientId, state] of clientSessions) {
+    if (state.findBarWcv && state.findBarWcv.webContents === sender) return { clientId, state };
+  }
+  return null;
+}
+
+ipcMain.handle('findbar-search', (event, text, forward, findNext) => {
+  const found = findStateByFindBarSender(event.sender);
+  if (!found) return;
+  const activeTab = found.state.tabs[found.state.activeIdx];
+  if (!activeTab || activeTab.wcv.webContents.isDestroyed()) return;
+  // Electron's findInPage silently drops the request (no found-in-page event ever
+  // fires) when findNext is explicitly passed as false — only omitting the key
+  // entirely (letting it default) or passing true works. Confirmed empirically.
+  const options = { forward };
+  if (findNext) options.findNext = true;
+  activeTab.wcv.webContents.findInPage(text, options);
+});
+
+ipcMain.handle('findbar-stop', (event) => {
+  const found = findStateByFindBarSender(event.sender);
+  if (!found) return;
+  const activeTab = found.state.tabs[found.state.activeIdx];
+  if (activeTab && !activeTab.wcv.webContents.isDestroyed()) activeTab.wcv.webContents.stopFindInPage('clearSelection');
+});
+
+ipcMain.handle('findbar-close', (event) => {
+  const found = findStateByFindBarSender(event.sender);
+  if (found) toggleFindBar(found.clientId, found.state, false);
 });
 
 // ---- Tenant tab strip (top-level, one per window) ----

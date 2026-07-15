@@ -1,0 +1,135 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg2: #161625;
+    --border: #2a2a40;
+    --text: #e2e8f0;
+    --dim: #8892a4;
+    --hover-bg: #252540;
+  }
+  :root[data-theme="light"] {
+    --bg2: #ffffff;
+    --border: #dde1e7;
+    --text: #1a1d24;
+    --dim: #6b7280;
+    --hover-bg: #eceef2;
+  }
+  html, body { height: 100%; overflow: hidden; background: transparent; }
+  body {
+    display: flex;
+    align-items: center;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    user-select: none;
+  }
+
+  #bar {
+    width: 100%;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 6px 0 10px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.35);
+  }
+
+  #query {
+    flex: 1;
+    min-width: 0;
+    height: 26px;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text);
+    font-size: 13px;
+    font-family: inherit;
+  }
+  #query::placeholder { color: var(--dim); }
+
+  #count {
+    flex-shrink: 0;
+    font-size: 11px;
+    color: var(--dim);
+    padding: 0 4px;
+    white-space: nowrap;
+  }
+
+  .find-btn {
+    flex-shrink: 0;
+    width: 24px; height: 24px;
+    border: none;
+    background: transparent;
+    color: var(--dim);
+    border-radius: 5px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px;
+    transition: background .1s, color .1s;
+    line-height: 1;
+  }
+  .find-btn:hover:not(:disabled) { background: var(--hover-bg); color: var(--text); }
+  .find-btn:disabled { opacity: .35; cursor: default; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <input id="query" spellcheck="false" placeholder="Find in page">
+  <span id="count"></span>
+  <button class="find-btn" id="btn-prev" title="Previous match (Shift+Enter)">↑</button>
+  <button class="find-btn" id="btn-next" title="Next match (Enter)">↓</button>
+  <button class="find-btn" id="btn-close" title="Close (Esc)">✕</button>
+</div>
+<script>
+  const query = document.getElementById('query');
+  const count = document.getElementById('count');
+  const btnPrev = document.getElementById('btn-prev');
+  const btnNext = document.getElementById('btn-next');
+  const btnClose = document.getElementById('btn-close');
+
+  function updateButtons() {
+    const has = query.value.length > 0;
+    btnPrev.disabled = !has;
+    btnNext.disabled = !has;
+  }
+
+  function doSearch(forward, findNext) {
+    const text = query.value;
+    if (!text) { window.findBarAPI.stop(); count.textContent = ''; return; }
+    window.findBarAPI.search(text, forward, findNext);
+  }
+
+  query.addEventListener('input', () => { updateButtons(); doSearch(true, false); });
+  query.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); doSearch(!e.shiftKey, true); }
+    else if (e.key === 'Escape') { e.preventDefault(); window.findBarAPI.close(); }
+  });
+
+  btnPrev.addEventListener('click', () => doSearch(false, true));
+  btnNext.addEventListener('click', () => doSearch(true, true));
+  btnClose.addEventListener('click', () => window.findBarAPI.close());
+
+  window.findBarAPI.onOpen(() => {
+    count.textContent = '';
+    updateButtons();
+    query.focus();
+    query.select();
+  });
+
+  window.findBarAPI.onResult(r => {
+    count.textContent = r.matches > 0 ? `${r.activeMatchOrdinal}/${r.matches}` : 'No results';
+  });
+
+  window.findBarAPI.getTheme().then(t => { document.documentElement.dataset.theme = t; });
+  window.findBarAPI.onThemeChange(t => { document.documentElement.dataset.theme = t; });
+
+  updateButtons();
+</script>
+</body>
+</html>
