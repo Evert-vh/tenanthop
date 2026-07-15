@@ -348,6 +348,9 @@ const CHANGELOG = {
   '1.5.1': [
     'The "What\'s new" popup and GitHub release notes now include every version you missed, not just the latest one, so you can scroll down and see the full history.',
   ],
+  '1.5.2': [
+    'The "What\'s new" popup now always shows the complete version history, not just what changed since you last opened the app — same scrollable list every time.',
+  ],
 };
 
 function compareVersions(a, b) {
@@ -369,10 +372,11 @@ ipcMain.handle('get-update-notes', () => {
     return null;
   }
   if (lastSeen === current) return null;
-  // Show every version's notes between what they last saw and now, not just the
-  // latest — otherwise skipping several updates in a row silently drops history.
+  // Always show the full history up to the current version (not just what changed
+  // since lastSeen) — matches the GitHub release notes, and gives the user
+  // something to scroll through regardless of how recently they last updated.
   const groups = Object.keys(CHANGELOG)
-    .filter(v => compareVersions(v, lastSeen) > 0 && compareVersions(v, current) <= 0)
+    .filter(v => compareVersions(v, current) <= 0)
     .sort(compareVersions)
     .reverse()
     .map(version => ({ version, notes: CHANGELOG[version] }));
