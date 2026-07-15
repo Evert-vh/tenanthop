@@ -43,6 +43,8 @@ function createMainWindow() {
     minHeight: 500,
     title: 'TenantHub',
     backgroundColor: '#0f0f1a',
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#161625', symbolColor: '#c8d0de', height: 44 },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -169,12 +171,14 @@ ipcMain.handle('delete-client', async (_, id) => {
     cancelId: 1,
     title: 'Delete client',
     message: `Delete "${client.name}"?`,
-    detail: 'This closes their portal window and clears their saved sign-in session.',
+    detail: 'This closes their portal tab and clears their saved sign-in session.',
   });
   if (response !== 0) return false;
 
-  const state = clientWindows.get(id);
-  if (state) state.win.close();
+  // Close just this tenant's tab — NOT the whole window, since other tenants may
+  // be sharing it now.
+  const tenant = clientSessions.get(id);
+  if (tenant) closeTenant(tenant.win, id);
   try {
     await session.fromPartition(`persist:client-${id}`).clearStorageData();
   } catch { /* partition may never have been used */ }
@@ -310,6 +314,11 @@ const CHANGELOG = {
     'Fixed: selecting a result in the quick switcher (Ctrl+K) with the mouse did nothing — only arrow keys + Enter worked.',
     'The current version number now shows next to the ⓘ button in the header.',
   ],
+  '1.4.0': [
+    'Clients now open as tabs alongside each other in one window by default, instead of every client getting its own separate window.',
+    'Any client tab can be popped out into its own window (⇱ on the tab) for side-by-side work, and merged back in later (⇲ Merge window).',
+    'Removed the separate title bar on the main window and client windows — window controls now sit inline with the header/tabs for a cleaner, more integrated look.',
+  ],
 };
 
 ipcMain.handle('get-update-notes', () => {
@@ -329,10 +338,23 @@ ipcMain.handle('mark-update-seen', () => {
   store.set('lastSeenVersion', app.getVersion());
 });
 
-// ---- Portal windows (tabbed browser per client) ----
+// ---- Tenant windows (clients as tabs, sharing a window by default) ----
+//
+// Model: a BaseWindow can host one or more "tenants" (clients). Each window has
+// exactly one tenant-level tab strip (tenantBarWcv) plus, per tenant, a portal-level
+// tab strip (tabBarWcv) and its portal tabs — identical to how a single client's
+// browsing worked before. Only the active tenant's tabBarWcv + tabs are visible;
+// the rest exist but stay hidden until switched to.
+//
+// clientSessions: clientId -> TenantState (one entry per open client, regardless of
+//   which window currently hosts it)
+// windowState: BaseWindow -> { tenantBarWcv, tenantIds: [...], activeTenantId }
 
-const clientWindows = new Map();
-const TAB_BAR_H = 78; // tab row (40) + nav row (38)
+const clientSessions = new Map();
+const windowState = new Map();
+const TENANT_BAR_H = 36;
+const TAB_BAR_H = 78; // portal tab row (40) + nav row (38), unchanged in height
+let lastFocusedTenantWin = null;
 
 function getFaviconUrl(url) {
   if (!url || url.startsWith('data:')) return null;
@@ -370,18 +392,237 @@ function notifyTabBar(clientId, state) {
   if (!wc.isDestroyed()) wc.send('tab-state-update', serializeState(clientId, state));
 }
 
+function serializeWindowState(win) {
+  const info = windowState.get(win);
+  if (!info) return null;
+  const otherWindowOpen = [...windowState.keys()].some(w => w !== win && !w.isDestroyed());
+  return {
+    activeTenantId: info.activeTenantId,
+    tenants: info.tenantIds.map(id => {
+      const t = clientSessions.get(id);
+      return t ? { clientId: id, name: t.clientName, color: t.color } : null;
+    }).filter(Boolean),
+    canPopOut: info.tenantIds.length > 1,
+    canMergeBack: info.tenantIds.length === 1 && otherWindowOpen,
+  };
+}
+
+function notifyTenantBar(win) {
+  const info = windowState.get(win);
+  if (!info) return;
+  const wc = info.tenantBarWcv.webContents;
+  if (!wc.isDestroyed()) wc.send('tenant-state-update', serializeWindowState(win));
+  // Other windows' "can merge back" depends on whether *this* window exists too
+  for (const otherWin of windowState.keys()) {
+    if (otherWin === win) continue;
+    const otherInfo = windowState.get(otherWin);
+    if (otherInfo && otherInfo.tenantIds.length === 1) {
+      const otherWc = otherInfo.tenantBarWcv.webContents;
+      if (!otherWc.isDestroyed()) otherWc.send('tenant-state-update', serializeWindowState(otherWin));
+    }
+  }
+}
+
+function resizeWindowChrome(win) {
+  const info = windowState.get(win);
+  if (!info) return;
+  const { width } = win.getContentBounds();
+  info.tenantBarWcv.setBounds({ x: 0, y: 0, width, height: TENANT_BAR_H });
+  const active = clientSessions.get(info.activeTenantId);
+  if (active) resizeViews(active);
+}
+
 function resizeViews(state) {
   const { width, height } = state.win.getContentBounds();
-  state.tabBarWcv.setBounds({ x: 0, y: 0, width, height: TAB_BAR_H });
+  state.tabBarWcv.setBounds({ x: 0, y: TENANT_BAR_H, width, height: TAB_BAR_H });
+  const bodyH = height - TENANT_BAR_H - TAB_BAR_H;
   state.tabs.forEach((tab, i) => {
-    tab.wcv.setBounds({ x: 0, y: TAB_BAR_H, width, height: height - TAB_BAR_H });
+    tab.wcv.setBounds({ x: 0, y: TENANT_BAR_H + TAB_BAR_H, width, height: bodyH });
     tab.wcv.setVisible(i === state.activeIdx);
   });
   if (state.switcherWcv) state.switcherWcv.setBounds({ x: 0, y: 0, width, height });
 }
 
-// Ctrl+K quick switcher — jump to another client's window without going back to
-// the launcher. Built lazily per client window and reused for the life of the window.
+// Make `clientId` the visible tenant in `win` — hides whichever tenant was showing,
+// shows this one, resizes/reveals its tabs, and refreshes both tab strips.
+function switchTenant(win, clientId) {
+  const info = windowState.get(win);
+  if (!info || info.activeTenantId === clientId) return;
+
+  const prev = clientSessions.get(info.activeTenantId);
+  if (prev) {
+    prev.tabBarWcv.setVisible(false);
+    const prevTab = prev.tabs[prev.activeIdx];
+    if (prevTab) prevTab.wcv.setVisible(false);
+  }
+
+  info.activeTenantId = clientId;
+  const next = clientSessions.get(clientId);
+  if (next) {
+    win.setTitle(next.clientName);
+    next.tabBarWcv.setVisible(true);
+    resizeViews(next);
+    notifyTabBar(clientId, next);
+  }
+  notifyTenantBar(win);
+}
+
+// Creates a new BaseWindow with just the tenant tab strip — no tenants yet.
+function createTenantWindow(initialTitle) {
+  const win = new BaseWindow({
+    width: 1400, height: 900, title: initialTitle, backgroundColor: '#0f0f1a',
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#0a0a14', symbolColor: '#c8d0de', height: TENANT_BAR_H },
+  });
+
+  const tenantBarWcv = new WebContentsView({
+    webPreferences: { preload: path.join(__dirname, 'tenantbar-preload.js'), contextIsolation: true, nodeIntegration: false },
+  });
+  win.contentView.addChildView(tenantBarWcv);
+  const { width } = win.getContentBounds();
+  tenantBarWcv.setBounds({ x: 0, y: 0, width, height: TENANT_BAR_H });
+  tenantBarWcv.webContents.loadFile(path.join(__dirname, 'tenantbar.html'));
+
+  // Ctrl+T / Ctrl+Shift+T / Ctrl+K should work even if focus somehow lands on the
+  // tenant strip itself rather than the active tenant's own tab bar.
+  tenantBarWcv.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    const ctrl = input.control || input.meta;
+    const key = input.key.toLowerCase();
+    const info = windowState.get(win);
+    const active = info && clientSessions.get(info.activeTenantId);
+    if (!active) return;
+    if (ctrl && input.shift && key === 't') { reopenClosedTab(info.activeTenantId, active); event.preventDefault(); }
+    else if (ctrl && key === 't') { newTab(info.activeTenantId, active); event.preventDefault(); }
+    else if (ctrl && key === 'k') { toggleSwitcher(info.activeTenantId, active); event.preventDefault(); }
+  });
+
+  const info = { tenantBarWcv, tenantIds: [], activeTenantId: null };
+  windowState.set(win, info);
+
+  win.on('focus', () => { lastFocusedTenantWin = win; });
+  win.on('resize', () => resizeWindowChrome(win));
+  win.on('closed', () => {
+    const curInfo = windowState.get(win);
+    if (curInfo) {
+      for (const tid of [...curInfo.tenantIds]) destroyTenant(tid);
+    }
+    windowState.delete(win);
+    if (lastFocusedTenantWin === win) lastFocusedTenantWin = null;
+    pushClientStatuses();
+    // Other standalone windows may now be mergeable/not — refresh their strips
+    for (const otherWin of windowState.keys()) notifyTenantBar(otherWin);
+  });
+
+  return { win, info };
+}
+
+// Fully tears down a tenant's own views (tabs, switcher, tab bar). Does not touch
+// windowState.tenantIds — callers are responsible for removing the id first.
+function destroyTenant(clientId) {
+  const tenant = clientSessions.get(clientId);
+  if (!tenant) return;
+  tenant.tabs.forEach(t => { if (!t.wcv.webContents.isDestroyed()) t.wcv.webContents.destroy(); });
+  if (tenant.switcherWcv && !tenant.switcherWcv.webContents.isDestroyed()) tenant.switcherWcv.webContents.destroy();
+  if (!tenant.tabBarWcv.webContents.isDestroyed()) tenant.tabBarWcv.webContents.destroy();
+  clientSessions.delete(clientId);
+}
+
+// Close one tenant's tab (✕ on the tenant strip, or deleting a client). Closes the
+// whole window only if this was the last tenant hosted in it.
+function closeTenant(win, clientId) {
+  const info = windowState.get(win);
+  if (!info) return;
+  const idx = info.tenantIds.indexOf(clientId);
+  if (idx === -1) return;
+  info.tenantIds.splice(idx, 1);
+
+  const wasActive = info.activeTenantId === clientId;
+  destroyTenant(clientId);
+
+  if (info.tenantIds.length === 0) {
+    win.close(); // 'closed' handler finishes cleanup
+    return;
+  }
+
+  if (wasActive) {
+    info.activeTenantId = null; // force switchTenant to actually run, not no-op
+    switchTenant(win, info.tenantIds[Math.max(0, idx - 1)]);
+  } else {
+    notifyTenantBar(win);
+  }
+}
+
+// Move a tenant's live views (same WebContentsView instances — no reload) out of a
+// shared window into a brand-new standalone one.
+function popOutTenant(clientId) {
+  const tenant = clientSessions.get(clientId);
+  if (!tenant) return false;
+  const oldWin = tenant.win;
+  const oldInfo = windowState.get(oldWin);
+  if (!oldInfo || oldInfo.tenantIds.length <= 1) return false; // nothing to separate
+
+  oldInfo.tenantIds = oldInfo.tenantIds.filter(id => id !== clientId);
+  oldWin.contentView.removeChildView(tenant.tabBarWcv);
+  tenant.tabs.forEach(t => oldWin.contentView.removeChildView(t.wcv));
+  if (tenant.switcherWcv) oldWin.contentView.removeChildView(tenant.switcherWcv);
+
+  if (oldInfo.activeTenantId === clientId) {
+    oldInfo.activeTenantId = null;
+    switchTenant(oldWin, oldInfo.tenantIds[0]);
+  } else {
+    notifyTenantBar(oldWin);
+  }
+
+  const { win: newWin, info: newInfo } = createTenantWindow(tenant.clientName);
+  newWin.contentView.addChildView(tenant.tabBarWcv);
+  tenant.tabs.forEach(t => newWin.contentView.addChildView(t.wcv));
+  if (tenant.switcherWcv) newWin.contentView.addChildView(tenant.switcherWcv);
+  tenant.win = newWin;
+  newInfo.tenantIds.push(clientId);
+
+  switchTenant(newWin, clientId);
+  newWin.focus();
+  lastFocusedTenantWin = newWin;
+  return true;
+}
+
+// Move a standalone tenant's live views into another open tenant window, closing
+// the now-empty source window.
+function mergeTenant(clientId) {
+  const tenant = clientSessions.get(clientId);
+  if (!tenant) return false;
+  const oldWin = tenant.win;
+  const oldInfo = windowState.get(oldWin);
+  if (!oldInfo || oldInfo.tenantIds.length !== 1) return false; // only mergeable if standalone
+
+  const targetWin = [...windowState.keys()].find(w => w !== oldWin && !w.isDestroyed());
+  if (!targetWin) return false;
+  const targetInfo = windowState.get(targetWin);
+
+  oldWin.contentView.removeChildView(tenant.tabBarWcv);
+  tenant.tabs.forEach(t => oldWin.contentView.removeChildView(t.wcv));
+  if (tenant.switcherWcv) oldWin.contentView.removeChildView(tenant.switcherWcv);
+
+  targetWin.contentView.addChildView(tenant.tabBarWcv);
+  tenant.tabs.forEach(t => targetWin.contentView.addChildView(t.wcv));
+  if (tenant.switcherWcv) targetWin.contentView.addChildView(tenant.switcherWcv);
+  tenant.win = targetWin;
+  targetInfo.tenantIds.push(clientId);
+
+  // Clear before closing — the 'closed' handler would otherwise destroy the
+  // tenant we just moved, thinking it's still homed here.
+  oldInfo.tenantIds = [];
+  oldWin.close();
+
+  switchTenant(targetWin, clientId);
+  targetWin.focus();
+  lastFocusedTenantWin = targetWin;
+  return true;
+}
+
+// Ctrl+K quick switcher — jump to another client without leaving this window.
+// Built lazily per tenant and reused for the life of that tenant's session.
 function toggleSwitcher(clientId, state) {
   const { win } = state;
   if (!state.switcherWcv) {
@@ -416,9 +657,11 @@ function toggleSwitcher(clientId, state) {
     const { width, height } = win.getContentBounds();
     wcv.setBounds({ x: 0, y: 0, width, height });
     // Paint order alone isn't enough — WebContentsView reordering doesn't
-    // reliably win real mouse hit-testing against sibling views, so the tab
-    // bar and active tab underneath could still intercept clicks meant for
-    // the switcher. Hide them outright while it's open.
+    // reliably win real mouse hit-testing against sibling views, so the tenant
+    // bar, tab bar, and active tab underneath could still intercept clicks meant
+    // for the switcher. Hide them outright while it's open.
+    const info = windowState.get(win);
+    if (info) info.tenantBarWcv.setVisible(false);
     state.tabBarWcv.setVisible(false);
     const activeTab = state.tabs[state.activeIdx];
     if (activeTab) activeTab.wcv.setVisible(false);
@@ -432,71 +675,83 @@ function toggleSwitcher(clientId, state) {
     });
   } else {
     wcv.setVisible(false);
+    const info = windowState.get(win);
+    if (info) info.tenantBarWcv.setVisible(true);
     state.tabBarWcv.setVisible(true);
     resizeViews(state); // restores tab bounds/visibility for the active tab
   }
 }
 
-// Create (or reuse) a client's BaseWindow + tab strip. Looks client name/color up
-// from the store so it's always current, regardless of who's asking (the launcher's
-// "open portal" click, or the quick switcher jumping in from another client window).
-function ensureClientWindow(clientId) {
-  let state = clientWindows.get(clientId);
-  if (state) return state;
+// Get (or create) an open session for a client. opts.targetWin pins it to a
+// specific window (used by the switcher, so a selection always lands in the
+// window it was invoked from); otherwise it joins the last-focused tenant window,
+// or starts a fresh one if none is open. Looks client name/color up from the
+// store so it's always current regardless of who's asking.
+function ensureClientSession(clientId, opts = {}) {
+  let tenant = clientSessions.get(clientId);
+  if (tenant) return tenant;
 
   const client = store.get('clients', []).find(c => c.id === clientId);
   if (!client) return null;
 
-  const win = new BaseWindow({ width: 1400, height: 900, title: client.name, backgroundColor: '#0f0f1a' });
+  let win;
+  if (opts.targetWin && windowState.has(opts.targetWin) && !opts.targetWin.isDestroyed()) {
+    win = opts.targetWin;
+  } else if (!opts.forceNewWindow && lastFocusedTenantWin && windowState.has(lastFocusedTenantWin) && !lastFocusedTenantWin.isDestroyed()) {
+    win = lastFocusedTenantWin;
+  } else {
+    ({ win } = createTenantWindow(client.name));
+  }
 
   const tabBarWcv = new WebContentsView({
     webPreferences: { preload: path.join(__dirname, 'tabbar-preload.js'), contextIsolation: true, nodeIntegration: false },
   });
   win.contentView.addChildView(tabBarWcv);
-  const { width } = win.getContentBounds();
-  tabBarWcv.setBounds({ x: 0, y: 0, width, height: TAB_BAR_H });
+  const { width, height } = win.getContentBounds();
+  tabBarWcv.setBounds({ x: 0, y: TENANT_BAR_H, width, height: TAB_BAR_H });
+  tabBarWcv.setVisible(false); // switchTenant() below reveals it if it becomes active
   tabBarWcv.webContents.loadFile(path.join(__dirname, 'tabbar.html'));
 
-  state = { win, tabBarWcv, tabs: [], activeIdx: -1, clientName: client.name, color: client.color, closedStack: [] };
-  clientWindows.set(clientId, state);
+  tenant = { clientId, win, tabBarWcv, tabs: [], activeIdx: -1, clientName: client.name, color: client.color, closedStack: [] };
+  clientSessions.set(clientId, tenant);
 
   // Tab-strip shortcuts work even when focus is in the address bar, not just in a tab
   tabBarWcv.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
     const ctrl = input.control || input.meta;
     const key = input.key.toLowerCase();
-    if (ctrl && input.shift && key === 't') { reopenClosedTab(clientId, state); event.preventDefault(); }
-    else if (ctrl && key === 't') { newTab(clientId, state); event.preventDefault(); }
-    else if (ctrl && key === 'k') { toggleSwitcher(clientId, state); event.preventDefault(); }
+    if (ctrl && input.shift && key === 't') { reopenClosedTab(clientId, tenant); event.preventDefault(); }
+    else if (ctrl && key === 't') { newTab(clientId, tenant); event.preventDefault(); }
+    else if (ctrl && key === 'k') { toggleSwitcher(clientId, tenant); event.preventDefault(); }
   });
 
   tabBarWcv.webContents.on('context-menu', () => {
     Menu.buildFromTemplate([
-      { label: 'New tab', click: () => newTab(clientId, state) },
-      { label: 'Reopen closed tab', enabled: state.closedStack.length > 0, click: () => reopenClosedTab(clientId, state) },
+      { label: 'New tab', click: () => newTab(clientId, tenant) },
+      { label: 'Reopen closed tab', enabled: tenant.closedStack.length > 0, click: () => reopenClosedTab(clientId, tenant) },
     ]).popup({ window: win });
   });
 
-  win.on('resize', () => resizeViews(state));
-  win.on('closed', () => {
-    state.tabs.forEach(t => { if (!t.wcv.webContents.isDestroyed()) t.wcv.webContents.destroy(); });
-    if (state.switcherWcv && !state.switcherWcv.webContents.isDestroyed()) state.switcherWcv.webContents.destroy();
-    clientWindows.delete(clientId);
-    pushClientStatuses();
-  });
+  const info = windowState.get(win);
+  info.tenantIds.push(clientId);
+  switchTenant(win, clientId);
 
-  return state;
+  if (win.isMinimized()) win.restore();
+  win.focus();
+  lastFocusedTenantWin = win;
+
+  return tenant;
 }
 
 ipcMain.handle('tab-get-state', (event) => {
-  for (const [clientId, state] of clientWindows) {
+  for (const [clientId, state] of clientSessions) {
     if (state.tabBarWcv.webContents === event.sender) return serializeState(clientId, state);
   }
   return null;
 });
 
 ipcMain.handle('tab-switch', (_, clientId, idx) => {
-  const state = clientWindows.get(clientId);
+  const state = clientSessions.get(clientId);
   if (!state) return;
   state.tabs.forEach((t, i) => t.wcv.setVisible(i === idx));
   state.activeIdx = idx;
@@ -519,7 +774,7 @@ function closeTab(clientId, state, idx) {
   state.win.contentView.removeChildView(tab.wcv);
   if (!wc.isDestroyed()) wc.destroy();
   state.tabs.splice(idx, 1);
-  if (state.tabs.length === 0) { state.win.close(); return; }
+  if (state.tabs.length === 0) { closeTenant(state.win, clientId); return; }
   if (idx < state.activeIdx) state.activeIdx--;
   else if (idx === state.activeIdx) state.activeIdx = Math.min(idx, state.tabs.length - 1);
   state.tabs.forEach((t, i) => t.wcv.setVisible(i === state.activeIdx));
@@ -537,22 +792,22 @@ function reopenClosedTab(clientId, state) {
 }
 
 ipcMain.handle('tab-close', (_, clientId, idx) => {
-  const state = clientWindows.get(clientId);
+  const state = clientSessions.get(clientId);
   if (state) closeTab(clientId, state, idx);
 });
 
 ipcMain.handle('tab-new', (_, clientId) => {
-  const state = clientWindows.get(clientId);
+  const state = clientSessions.get(clientId);
   if (state) newTab(clientId, state);
 });
 
 ipcMain.handle('tab-reopen-closed', (_, clientId) => {
-  const state = clientWindows.get(clientId);
+  const state = clientSessions.get(clientId);
   if (state) reopenClosedTab(clientId, state);
 });
 
 function activeWebContents(clientId) {
-  const state = clientWindows.get(clientId);
+  const state = clientSessions.get(clientId);
   const tab = state?.tabs[state.activeIdx];
   if (!tab || tab.wcv.webContents.isDestroyed()) return null;
   return tab.wcv.webContents;
@@ -602,7 +857,7 @@ ipcMain.handle('tab-toggle-save', (_, clientId) => {
   client.portals = portals;
   store.set('clients', clients);
 
-  const state = clientWindows.get(clientId);
+  const state = clientSessions.get(clientId);
   if (state) notifyTabBar(clientId, state);
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('clients-updated', clients);
@@ -706,12 +961,17 @@ function addTab(clientId, state, url, initialTitle) {
     webPreferences: { partition: getClientPartition(clientId), nodeIntegration: false, contextIsolation: true },
   });
   win.contentView.addChildView(wcv);
-  wcv.setBounds({ x: 0, y: TAB_BAR_H, width, height: height - TAB_BAR_H });
+  wcv.setBounds({ x: 0, y: TENANT_BAR_H + TAB_BAR_H, width, height: height - TENANT_BAR_H - TAB_BAR_H });
 
   const tab = { wcv, title: initialTitle, favicon: getFaviconUrl(url) };
   state.tabs.push(tab);
   const newIdx = state.tabs.length - 1;
-  state.tabs.forEach((t, i) => t.wcv.setVisible(i === newIdx));
+  // Only actually show the new tab if this tenant is the one currently on screen —
+  // addTab can be called for a background tenant (e.g. reopening while another
+  // tenant tab is active), and its content must stay hidden until switched to.
+  const winInfo = windowState.get(win);
+  const isVisibleTenant = winInfo && winInfo.activeTenantId === state.clientId;
+  state.tabs.forEach((t, i) => t.wcv.setVisible(isVisibleTenant && i === newIdx));
   state.activeIdx = newIdx;
 
   // Update tab title and favicon as page navigates/loads
@@ -809,11 +1069,12 @@ function addTab(clientId, state, url, initialTitle) {
 }
 
 ipcMain.handle('open-portal', (_, { clientId, portalUrl, portalName }) => {
-  const state = ensureClientWindow(clientId);
+  const state = ensureClientSession(clientId);
   if (!state) return false;
 
   if (state.win.isMinimized()) state.win.restore();
   state.win.focus();
+  switchTenant(state.win, clientId);
 
   addTab(clientId, state, portalUrl, portalName);
   pushClientStatuses();
@@ -821,27 +1082,69 @@ ipcMain.handle('open-portal', (_, { clientId, portalUrl, portalName }) => {
 });
 
 ipcMain.handle('switcher-toggle', (_, clientId) => {
-  const state = clientWindows.get(clientId);
+  const state = clientSessions.get(clientId);
   if (state) toggleSwitcher(clientId, state);
 });
 
 ipcMain.handle('switcher-close', (_, clientId) => {
-  const state = clientWindows.get(clientId);
+  const state = clientSessions.get(clientId);
   if (state?.switcherOpen) toggleSwitcher(clientId, state);
 });
 
 // portal (optional): { url, name } — jump straight into a specific portal instead
-// of just focusing the client's window / giving them a blank tab
+// of just switching to the client's tab / giving them a blank tab
 ipcMain.handle('switcher-go', (_, fromClientId, targetClientId, portal) => {
-  const fromState = clientWindows.get(fromClientId);
+  const fromState = clientSessions.get(fromClientId);
   if (fromState?.switcherOpen) toggleSwitcher(fromClientId, fromState);
 
-  const target = ensureClientWindow(targetClientId);
+  const target = ensureClientSession(targetClientId, { targetWin: fromState?.win });
   if (!target) return false;
   if (target.win.isMinimized()) target.win.restore();
   target.win.focus();
+  switchTenant(target.win, targetClientId);
 
   if (portal?.url) addTab(targetClientId, target, portal.url, portal.name);
   else if (target.tabs.length === 0) newTab(targetClientId, target);
   return true;
+});
+
+// ---- Tenant tab strip (top-level, one per window) ----
+
+ipcMain.handle('tenant-get-state', (event) => {
+  for (const [win, info] of windowState) {
+    if (info.tenantBarWcv.webContents === event.sender) return serializeWindowState(win);
+  }
+  return null;
+});
+
+ipcMain.handle('tenant-switch', (event, clientId) => {
+  for (const [win, info] of windowState) {
+    if (info.tenantBarWcv.webContents === event.sender) { switchTenant(win, clientId); return; }
+  }
+});
+
+ipcMain.handle('tenant-close', (event, clientId) => {
+  for (const [win, info] of windowState) {
+    if (info.tenantBarWcv.webContents === event.sender) { closeTenant(win, clientId); return; }
+  }
+});
+
+ipcMain.handle('tenant-pop-out', (_, clientId) => {
+  popOutTenant(clientId);
+});
+
+ipcMain.handle('tenant-merge-back', (_, clientId) => {
+  mergeTenant(clientId);
+});
+
+// "+" on the tenant strip — open the switcher for whichever tenant is currently
+// active in that window, so picking a client adds them here.
+ipcMain.handle('tenant-new', (event) => {
+  for (const [win, info] of windowState) {
+    if (info.tenantBarWcv.webContents === event.sender) {
+      const active = clientSessions.get(info.activeTenantId);
+      if (active) toggleSwitcher(info.activeTenantId, active);
+      return;
+    }
+  }
 });

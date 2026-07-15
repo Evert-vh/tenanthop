@@ -131,6 +131,7 @@ export default function App() {
           <div className="header-divider" />
           <button className="btn-add-client" onClick={() => setEditingClient({})}>+ Add client</button>
         </div>
+        <div className="caption-spacer" />
       </header>
 
       <div className="main-layout">

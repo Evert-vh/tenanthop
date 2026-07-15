@@ -101,6 +101,10 @@ button { cursor: pointer; border: none; outline: none; }
 }
 .btn-add-client:hover { opacity: .85; }
 
+/* Reserves space for the native minimize/maximize/close overlay buttons that
+   render in the top-right now that the OS title bar is hidden (titleBarOverlay). */
+.caption-spacer { width: 138px; flex-shrink: 0; -webkit-app-region: drag; }
+
 /* ── Layout ── */
 .main-layout { display: flex; flex: 1; min-height: 0; }
 

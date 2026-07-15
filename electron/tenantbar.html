@@ -1,0 +1,199 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 36px; overflow: hidden; }
+  body {
+    background: #0a0a14;
+    display: flex;
+    align-items: stretch;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: #e2e8f0;
+    user-select: none;
+    -webkit-app-region: drag;
+  }
+
+  #tenant-tabs {
+    flex: 1;
+    display: flex;
+    align-items: flex-end;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0 6px;
+    gap: 2px;
+    -webkit-app-region: no-drag;
+    min-width: 0;
+  }
+  #tenant-tabs::-webkit-scrollbar { height: 0; }
+
+  .tenant-tab {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 6px 0 10px;
+    height: 30px;
+    min-width: 110px;
+    max-width: 190px;
+    flex-shrink: 0;
+    background: transparent;
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: 8px 8px 0 0;
+    cursor: pointer;
+    transition: background .12s, border-color .12s;
+    margin-top: 4px;
+  }
+  .tenant-tab:hover { background: #161625; border-color: #252540; }
+  .tenant-tab.active {
+    background: #161625;
+    border-color: #2a2a40;
+    box-shadow: inset 0 2px 0 0 var(--cc, #3b82f6);
+  }
+
+  .tenant-tab .dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    box-shadow: 0 0 5px currentColor;
+  }
+  .tenant-tab .name {
+    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 11.5px; font-weight: 500; color: #8892a4;
+  }
+  .tenant-tab.active .name { color: #e2e8f0; }
+
+  /* CSS-only hover reveal — no JS DOM rebuild on hover, ever (that's exactly what
+     broke the quick switcher's mouse clicks before: rebuilding elements mid-hover
+     silently kills native click synthesis). */
+  .tenant-tab .pop-out, .tenant-tab .tclose {
+    flex-shrink: 0;
+    width: 16px; height: 16px;
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px;
+    color: transparent;
+    transition: background .1s, color .1s;
+    line-height: 1;
+  }
+  .tenant-tab:hover .pop-out, .tenant-tab:hover .tclose,
+  .tenant-tab.active .pop-out, .tenant-tab.active .tclose { color: #8892a4; }
+  .tenant-tab .tclose:hover { background: #3a3a52 !important; color: #f87171 !important; }
+  .tenant-tab .pop-out:hover { background: #3a3a52 !important; color: #e2e8f0 !important; }
+
+  #btn-add-tenant {
+    width: 26px; height: 26px;
+    margin: 0 4px 6px 6px;
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    color: #8892a4;
+    font-size: 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .1s, color .1s;
+    -webkit-app-region: no-drag;
+    line-height: 1;
+  }
+  #btn-add-tenant:hover { background: #252540; color: #e2e8f0; }
+
+  #merge-back {
+    flex-shrink: 0;
+    display: none;
+    align-items: center;
+    gap: 5px;
+    padding: 0 10px;
+    font-size: 10.5px;
+    font-weight: 500;
+    color: #8892a4;
+    background: transparent;
+    border: none;
+    border-left: 1px solid #16162599;
+    cursor: pointer;
+    white-space: nowrap;
+    -webkit-app-region: no-drag;
+    transition: background .1s, color .1s;
+  }
+  #merge-back.show { display: flex; }
+  #merge-back:hover { background: #14141f; color: #e2e8f0; }
+
+  /* Reserves space for the native minimize/maximize/close buttons, which render as
+     an overlay in the top-right corner now that the OS title bar is hidden. Windows'
+     default caption-button cluster is ~138px at 100% scaling; kept draggable so it
+     still acts like blank title-bar space rather than a dead zone. */
+  #caption-spacer { width: 138px; flex-shrink: 0; -webkit-app-region: drag; }
+</style>
+</head>
+<body>
+<div id="tenant-tabs"></div>
+<button id="merge-back" title="Merge this client into your other open window">⇲ Merge window</button>
+<div id="caption-spacer"></div>
+<script>
+  let state = { tenants: [], activeTenantId: null, canPopOut: false, canMergeBack: false };
+  const tabsEl = document.getElementById('tenant-tabs');
+  const mergeBtn = document.getElementById('merge-back');
+
+  const addTenantBtn = document.createElement('button');
+  addTenantBtn.id = 'btn-add-tenant';
+  addTenantBtn.title = 'Add a client to this window (Ctrl+K)';
+  addTenantBtn.textContent = '+';
+  addTenantBtn.addEventListener('click', () => window.tenantAPI.addTenant());
+
+  function render() {
+    addTenantBtn.remove(); // detach before clearing, so the node (and its listener) survives
+    tabsEl.innerHTML = '';
+    state.tenants.forEach(t => {
+      const el = document.createElement('div');
+      el.className = 'tenant-tab' + (t.clientId === state.activeTenantId ? ' active' : '');
+      el.style.setProperty('--cc', t.color || '#3b82f6');
+
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      dot.style.background = t.color || '#6b7280';
+      el.appendChild(dot);
+
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = t.name;
+      el.appendChild(name);
+
+      if (state.canPopOut) {
+        const pop = document.createElement('span');
+        pop.className = 'pop-out';
+        pop.textContent = '⇱';
+        pop.title = 'Open in its own window';
+        pop.addEventListener('click', e => {
+          e.stopPropagation();
+          window.tenantAPI.popOut(t.clientId);
+        });
+        el.appendChild(pop);
+      }
+
+      const close = document.createElement('span');
+      close.className = 'tclose';
+      close.textContent = '✕';
+      close.title = 'Close';
+      close.addEventListener('click', e => {
+        e.stopPropagation();
+        window.tenantAPI.close(t.clientId);
+      });
+      el.appendChild(close);
+
+      el.addEventListener('click', () => window.tenantAPI.switchTo(t.clientId));
+      tabsEl.appendChild(el);
+    });
+
+    tabsEl.appendChild(addTenantBtn);
+    mergeBtn.classList.toggle('show', !!state.canMergeBack);
+  }
+
+  mergeBtn.addEventListener('click', () => {
+    if (state.activeTenantId) window.tenantAPI.mergeBack(state.activeTenantId);
+  });
+
+  window.tenantAPI.onUpdate(s => { if (s) { state = s; render(); } });
+  window.tenantAPI.getState().then(s => { if (s) { state = s; render(); } });
+</script>
+</body>
+</html>
