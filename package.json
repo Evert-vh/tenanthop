@@ -9,7 +9,8 @@
     "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
     "build": "vite build",
     "start": "cross-env NODE_ENV=production electron .",
-    "package": "vite build && electron-builder --win"
+    "package": "vite build && electron-builder --win",
+    "release": "node scripts/release.js"
   },
   "build": {
     "appId": "com.dbest.tenanthub",
