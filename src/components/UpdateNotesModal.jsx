@@ -9,10 +9,15 @@ export default function UpdateNotesModal({ notes, onClose }) {
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
 
-        <div className="modal-body">
-          <ul className="update-notes-list">
-            {notes.notes.map((line, i) => <li key={i}>{line}</li>)}
-          </ul>
+        <div className="modal-body update-notes-body">
+          {notes.groups.map(group => (
+            <div className="update-notes-group" key={group.version}>
+              {notes.groups.length > 1 && <h4>{group.version}</h4>}
+              <ul className="update-notes-list">
+                {group.notes.map((line, i) => <li key={i}>{line}</li>)}
+              </ul>
+            </div>
+          ))}
         </div>
 
         <div className="modal-footer">

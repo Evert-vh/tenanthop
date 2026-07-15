@@ -345,7 +345,19 @@ const CHANGELOG = {
     'Portal tabs and client tabs can now be reordered by dragging them.',
     'Added a light theme — toggle it from the ☀️/🌙 button in the header. Your choice is remembered and applies to every window.',
   ],
+  '1.5.1': [
+    'The "What\'s new" popup and GitHub release notes now include every version you missed, not just the latest one, so you can scroll down and see the full history.',
+  ],
 };
+
+function compareVersions(a, b) {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0);
+  }
+  return 0;
+}
 
 ipcMain.handle('get-update-notes', () => {
   const current = app.getVersion();
@@ -356,8 +368,16 @@ ipcMain.handle('get-update-notes', () => {
     store.set('lastSeenVersion', current);
     return null;
   }
-  if (lastSeen === current || !CHANGELOG[current]) return null;
-  return { version: current, notes: CHANGELOG[current] };
+  if (lastSeen === current) return null;
+  // Show every version's notes between what they last saw and now, not just the
+  // latest — otherwise skipping several updates in a row silently drops history.
+  const groups = Object.keys(CHANGELOG)
+    .filter(v => compareVersions(v, lastSeen) > 0 && compareVersions(v, current) <= 0)
+    .sort(compareVersions)
+    .reverse()
+    .map(version => ({ version, notes: CHANGELOG[version] }));
+  if (groups.length === 0) return null;
+  return { version: current, groups };
 });
 
 ipcMain.handle('mark-update-seen', () => {

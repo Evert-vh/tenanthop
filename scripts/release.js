@@ -30,16 +30,30 @@ function tryCapture(cmd, args, opts = {}) {
   }
 }
 
-function extractChangelogNotes(version) {
+// Parses every version block out of the CHANGELOG object in electron/main.js,
+// in file order (oldest first — matches how entries get appended over time).
+function parseChangelog() {
   const src = fs.readFileSync(MAIN_JS, 'utf8');
-  const marker = `'${version}': [`;
-  const start = src.indexOf(marker);
-  if (start === -1) return null;
-  const end = src.indexOf('],', start);
-  const body = src.slice(start + marker.length, end);
-  const entries = [...body.matchAll(/'((?:[^'\\]|\\.)*)'/g)]
-    .map(m => m[1].replace(/\\'/g, "'").replace(/\\n/g, '\n'));
-  return entries.map(e => `- ${e}`).join('\n');
+  const blockStart = src.indexOf('const CHANGELOG = {');
+  const blockEnd = src.indexOf('\n};', blockStart);
+  const body = src.slice(blockStart, blockEnd);
+  return [...body.matchAll(/'(\d+\.\d+\.\d+)':\s*\[([\s\S]*?)\n {2}\],/g)].map(([, version, entriesText]) => ({
+    version,
+    entries: [...entriesText.matchAll(/'((?:[^'\\]|\\.)*)'/g)]
+      .map(m => m[1].replace(/\\'/g, "'").replace(/\\n/g, '\n')),
+  }));
+}
+
+// Cumulative release notes: current version's entries, then every earlier
+// version's entries below it, newest first — so scrolling a release page
+// shows history instead of just what changed in that one release.
+function buildReleaseNotes(version) {
+  const changelog = parseChangelog();
+  const idx = changelog.findIndex(b => b.version === version);
+  if (idx === -1) return null;
+  return changelog.slice(0, idx + 1).reverse()
+    .map(b => `## ${b.version}\n` + b.entries.map(e => `- ${e}`).join('\n'))
+    .join('\n\n');
 }
 
 function main() {
@@ -64,7 +78,7 @@ function main() {
     process.exit(1);
   }
 
-  const notes = extractChangelogNotes(version);
+  const notes = buildReleaseNotes(version);
   if (!notes) {
     console.error(`No CHANGELOG['${version}'] entry found in electron/main.js — add one before releasing.`);
     process.exit(1);
@@ -107,4 +121,6 @@ function main() {
   console.log(`\nDone: https://github.com/${REMOTE_REPO}/releases/tag/${tag}`);
 }
 
-main();
+module.exports = { parseChangelog, buildReleaseNotes };
+
+if (require.main === module) main();
