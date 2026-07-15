@@ -85,7 +85,7 @@ function main() {
   }
 
   console.log('Building...');
-  run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'package'], { cwd: PKG_ROOT });
+  run('npm', ['run', 'package'], { cwd: PKG_ROOT, shell: true });
 
   const assets = [
     path.join(RELEASE_DIR, `TenantHub-Setup-${version}.exe`),
