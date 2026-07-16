@@ -8,6 +8,44 @@ const { autoUpdater } = require('electron-updater');
 
 const isDev = process.env.NODE_ENV === 'development';
 
+// Microsoft's sign-in pages proactively surface a "sign in faster with a
+// passkey" prompt, which triggers the native Windows Hello "Choose a passkey"
+// dialog unprompted. This disables the passive autofill-suggested version of
+// that prompt; the explicit navigator.credentials.get() call the sign-in page
+// also makes (which is what actually pops the OS dialog) is blocked separately
+// below via a script injected into every page, since neither Electron nor
+// modern Chromium expose a simple flag to disable WebAuthn outright.
+app.commandLine.appendSwitch('disable-features', 'WebAuthenticationConditionalUI');
+
+// Neutralize navigator.credentials / PublicKeyCredential in every page this app
+// loads, so Microsoft's sign-in flow (and anything else) falls back to normal
+// password auth instead of invoking WebAuthn and popping the native Windows
+// Hello passkey/security-key picker. Injected on 'dom-ready' via
+// executeJavaScript (always runs in the page's main world regardless of
+// contextIsolation) — the CDP debugger's addScriptToEvaluateOnNewDocument
+// looked like the "correct" tool for this but didn't reliably apply across
+// the cross-origin redirects in a real Microsoft sign-in flow; this does.
+const BLOCK_WEBAUTHN_SCRIPT = `(function() {
+  try {
+    if (navigator.credentials) {
+      navigator.credentials.get = () => Promise.reject(new DOMException('WebAuthn is disabled', 'NotAllowedError'));
+      navigator.credentials.create = () => Promise.reject(new DOMException('WebAuthn is disabled', 'NotAllowedError'));
+    }
+    if (window.PublicKeyCredential) {
+      window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable = () => Promise.resolve(false);
+      if (window.PublicKeyCredential.isConditionalMediationAvailable) {
+        window.PublicKeyCredential.isConditionalMediationAvailable = () => Promise.resolve(false);
+      }
+    }
+  } catch { /* best-effort — never block page load over this */ }
+})();`;
+
+app.on('web-contents-created', (_, contents) => {
+  contents.on('dom-ready', () => {
+    contents.executeJavaScript(BLOCK_WEBAUTHN_SCRIPT).catch(() => {});
+  });
+});
+
 // One-time migration from pre-rename data dirs (m365-launcher → tenanthop → tenanthub):
 // carries over clients (config.json) and saved sign-in sessions (Partitions/)
 try {
@@ -356,6 +394,10 @@ const CHANGELOG = {
   ],
   '1.6.0': [
     'Added find-in-page (Ctrl+F) — search the current portal tab, with a match counter and next/previous navigation.',
+  ],
+  '1.6.1': [
+    'Fixed: client windows couldn\'t be moved — the whole tab strip was accidentally marked non-draggable instead of just the tabs themselves.',
+    'Fixed: signing in to a portal could pop up a native Windows "Choose a passkey" prompt. Since this app doesn\'t support passkeys, that\'s now blocked so sign-in goes straight to the normal password flow.',
   ],
 };
 

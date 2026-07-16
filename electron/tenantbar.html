@@ -44,7 +44,9 @@
     overflow-y: hidden;
     padding: 0 6px;
     gap: 2px;
-    -webkit-app-region: no-drag;
+    /* Deliberately NOT no-drag here — the empty space in this row (past the
+       last tab) needs to stay draggable so the window can be moved. Only the
+       actual tab pills below opt out via their own no-drag. */
     min-width: 0;
   }
   #tenant-tabs::-webkit-scrollbar { height: 0; }
@@ -65,6 +67,7 @@
     cursor: pointer;
     transition: background .12s, border-color .12s;
     margin-top: 4px;
+    -webkit-app-region: no-drag;
   }
   .tenant-tab:hover { background: var(--hover-bg); border-color: var(--border); }
   .tenant-tab.active {
