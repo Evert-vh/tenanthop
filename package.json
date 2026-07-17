@@ -10,7 +10,8 @@
     "build": "vite build",
     "start": "cross-env NODE_ENV=production electron .",
     "package": "vite build && electron-builder --win",
-    "release": "node scripts/release.js"
+    "release": "node scripts/release.js",
+    "push-evert": "node scripts/push-evert.js"
   },
   "build": {
     "appId": "com.dbest.tenanthub",
