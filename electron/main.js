@@ -40,9 +40,28 @@ const BLOCK_WEBAUTHN_SCRIPT = `(function() {
   } catch { /* best-effort — never block page load over this */ }
 })();`;
 
+// Microsoft only issues the long-lived ESTSAUTHPERSISTENT cookie (the one that survives
+// an app restart) if the post-login "Stay signed in?" (KMSI) interstitial is answered "Yes".
+// Left alone, sessions here only ever get the session-only ESTSAUTH cookie, which is gone
+// the next time the app opens — forcing a fresh sign-in far more often than a real browser
+// (where most people just click "Yes"). Auto-accepting it makes saved sessions behave the
+// way they visibly do in a normal Chrome profile.
+const KMSI_ACCEPT_SCRIPT = `(function() {
+  try {
+    const btn = document.getElementById('idSIButton9');
+    if (btn) btn.click();
+  } catch { /* best-effort — page may not be the KMSI screen after all */ }
+})();`;
+
 app.on('web-contents-created', (_, contents) => {
   contents.on('dom-ready', () => {
     contents.executeJavaScript(BLOCK_WEBAUTHN_SCRIPT).catch(() => {});
+    try {
+      const { hostname, pathname } = new URL(contents.getURL());
+      if (/(^|\.)login\.microsoftonline\.com$/.test(hostname) && /\/kmsi\b/i.test(pathname)) {
+        contents.executeJavaScript(KMSI_ACCEPT_SCRIPT).catch(() => {});
+      }
+    } catch { /* blank/invalid URL (e.g. about:blank) — nothing to match */ }
   });
 });
 
@@ -158,6 +177,9 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
   });
+  // Delay the first pass so it doesn't compete with app/window startup, then repeat.
+  setTimeout(runKeepAlive, 60 * 1000);
+  setInterval(runKeepAlive, KEEPALIVE_INTERVAL_MS);
 });
 
 app.on('window-all-closed', () => {
@@ -398,6 +420,10 @@ const CHANGELOG = {
   '1.6.1': [
     'Fixed: client windows couldn\'t be moved — the whole tab strip was accidentally marked non-draggable instead of just the tabs themselves.',
     'Fixed: signing in to a portal could pop up a native Windows "Choose a passkey" prompt. Since this app doesn\'t support passkeys, that\'s now blocked so sign-in goes straight to the normal password flow.',
+  ],
+  '1.7.0': [
+    'Sign-ins should stick around much longer. Fixed: the "Stay signed in?" prompt was never being answered, so sessions only ever got the short-lived cookie instead of the long-lived one.',
+    'Added a background refresh that quietly keeps every signed-in client\'s session alive every few hours, so a client you haven\'t opened in a few days doesn\'t come back logged out.',
   ],
 };
 
@@ -1095,6 +1121,48 @@ ipcMain.handle('get-client-statuses', () => getAllClientStatuses());
 async function pushClientStatuses() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.webContents.send('client-statuses-updated', await getAllClientStatuses());
+}
+
+// Entra's sign-in frequency window is sliding, not fixed — visiting any protected
+// Microsoft page resets the clock via silent SSO as long as the session cookie is
+// still valid. A client only gets visited when its tab is actually open, though, so
+// one left idle for a few days can lapse even though it would've silently renewed
+// if anything had touched it. This mimics "still using it" for every signed-in
+// client on a timer, in a hidden window, so idle tenants don't go stale between visits.
+const KEEPALIVE_URL = 'https://portal.office.com/';
+const KEEPALIVE_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
+const KEEPALIVE_TIMEOUT_MS = 20 * 1000;
+
+function keepAliveClient(clientId) {
+  return new Promise((resolve) => {
+    let win;
+    try {
+      win = new BrowserWindow({ show: false, webPreferences: { partition: getClientPartition(clientId) } });
+    } catch { resolve(); return; }
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      if (!win.isDestroyed()) win.destroy();
+      resolve();
+    };
+    win.webContents.once('did-finish-load', finish);
+    win.webContents.once('did-fail-load', finish);
+    setTimeout(finish, KEEPALIVE_TIMEOUT_MS);
+    win.loadURL(KEEPALIVE_URL).catch(finish);
+  });
+}
+
+// Runs one client at a time — this is a low-priority background nicety, not
+// something worth spending a burst of memory/CPU opening many hidden windows at once.
+async function runKeepAlive() {
+  const clients = store.get('clients', []);
+  for (const c of clients) {
+    try {
+      if (await getClientAuthStatus(c.id) === 'signed-in') await keepAliveClient(c.id);
+    } catch { /* best-effort — one client's failure shouldn't block the rest */ }
+  }
+  pushClientStatuses();
 }
 
 // AAD auth popups talk back to their opener via postMessage — they must stay
