@@ -428,6 +428,9 @@ const CHANGELOG = {
   '1.7.1': [
     'Fixed: the client sidebar no longer stays in whatever order clients were added or imported in — it\'s now always sorted alphabetically (pinned favorites still stay on top).',
   ],
+  '1.7.2': [
+    'Fixed: after using the quick switcher (Ctrl+K) or find-in-page (Ctrl+F), clicking inside a portal tab could silently stop working, even though you could still switch tabs. An invisible leftover overlay was catching the clicks meant for the tab underneath.',
+  ],
 };
 
 function compareVersions(a, b) {
@@ -565,7 +568,19 @@ function resizeViews(state) {
   const bodyH = height - TENANT_BAR_H - TAB_BAR_H;
   state.tabs.forEach((tab, i) => {
     tab.wcv.setBounds({ x: 0, y: TENANT_BAR_H + TAB_BAR_H, width, height: bodyH });
-    tab.wcv.setVisible(i === state.activeIdx);
+    if (i === state.activeIdx) {
+      // Paint order alone doesn't reliably win hit-testing against sibling views
+      // (same issue toggleSwitcher works around below) — after the switcher or find
+      // bar has been on top and closed, the now-invisible overlay can be left
+      // ahead of this tab in the hit-test order, silently swallowing every click
+      // even though the tab is what's actually on screen. Re-adding forces this
+      // tab back to the top for both paint and hit-testing.
+      state.win.contentView.removeChildView(tab.wcv);
+      state.win.contentView.addChildView(tab.wcv);
+      tab.wcv.setVisible(true);
+    } else {
+      tab.wcv.setVisible(false);
+    }
   });
   if (state.switcherWcv) state.switcherWcv.setBounds({ x: 0, y: 0, width, height });
   if (state.findBarOpen) positionFindBar(state);
@@ -579,10 +594,13 @@ function switchTenant(win, clientId) {
 
   const prev = clientSessions.get(info.activeTenantId);
   if (prev) {
+    // Close the find bar first — its close path calls resizeViews(prev), which
+    // re-shows prev's active tab, so hiding the tab/tab-bar has to happen after
+    // that or this closing tenant's content would be left visible on top.
+    if (prev.findBarOpen) toggleFindBar(info.activeTenantId, prev, false);
     prev.tabBarWcv.setVisible(false);
     const prevTab = prev.tabs[prev.activeIdx];
     if (prevTab) prevTab.wcv.setVisible(false);
-    if (prev.findBarOpen) toggleFindBar(info.activeTenantId, prev, false);
   }
 
   info.activeTenantId = clientId;
@@ -812,6 +830,10 @@ function toggleFindBar(clientId, state, forceOpen) {
       activeTab.wcv.webContents.stopFindInPage('clearSelection');
       activeTab.wcv.webContents.focus();
     }
+    // The find bar was brought to the top of the hit-test order to open (above)
+    // and doesn't lose that just by going invisible again — re-assert the active
+    // tab on top so it isn't left underneath an invisible view eating its clicks.
+    resizeViews(state);
   }
 }
 
@@ -949,8 +971,8 @@ ipcMain.handle('tab-switch', (_, clientId, idx) => {
   const state = clientSessions.get(clientId);
   if (!state) return;
   if (state.findBarOpen) toggleFindBar(clientId, state, false);
-  state.tabs.forEach((t, i) => t.wcv.setVisible(i === idx));
   state.activeIdx = idx;
+  resizeViews(state); // also re-asserts the active tab's hit-test/paint order
   notifyTabBar(clientId, state);
 });
 
@@ -986,7 +1008,7 @@ function closeTab(clientId, state, idx) {
   if (state.tabs.length === 0) { closeTenant(state.win, clientId); return; }
   if (idx < state.activeIdx) state.activeIdx--;
   else if (idx === state.activeIdx) state.activeIdx = Math.min(idx, state.tabs.length - 1);
-  state.tabs.forEach((t, i) => t.wcv.setVisible(i === state.activeIdx));
+  resizeViews(state); // also re-asserts the active tab's hit-test/paint order
   notifyTabBar(clientId, state);
 }
 
