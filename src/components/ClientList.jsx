@@ -15,7 +15,10 @@ export default function ClientList({
     const list = !search
       ? clients
       : clients.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
-    return [...list].sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0));
+    return [...list].sort((a, b) => {
+      const favDiff = (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0);
+      return favDiff !== 0 ? favDiff : a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    });
   }, [clients, search]);
 
   return (

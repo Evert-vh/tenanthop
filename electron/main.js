@@ -425,6 +425,9 @@ const CHANGELOG = {
     'Sign-ins should stick around much longer. Fixed: the "Stay signed in?" prompt was never being answered, so sessions only ever got the short-lived cookie instead of the long-lived one.',
     'Added a background refresh that quietly keeps every signed-in client\'s session alive every few hours, so a client you haven\'t opened in a few days doesn\'t come back logged out.',
   ],
+  '1.7.1': [
+    'Fixed: the client sidebar no longer stays in whatever order clients were added or imported in — it\'s now always sorted alphabetically (pinned favorites still stay on top).',
+  ],
 };
 
 function compareVersions(a, b) {
